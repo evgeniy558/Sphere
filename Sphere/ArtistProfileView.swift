@@ -28,16 +28,9 @@ struct ArtistProfileView: View {
         NavigationStack {
             Group {
                 if isPlaceholder && unified == nil {
-                    VStack(spacing: 16) {
-                        Spacer()
-                        ProgressView().controlSize(.large)
-                        Text(artist.name)
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(contentBackground.ignoresSafeArea())
+                    SkeletonArtistProfile()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(contentBackground.ignoresSafeArea())
                 } else {
                     ScrollView {
                         VStack(spacing: 0) {

@@ -47,3 +47,15 @@ func (h *Hub) Broadcast(userIDs []string, ev WSMessageEvent) {
 	}
 }
 
+// BroadcastJSON sends an arbitrary JSON-serializable payload to the given users.
+// Used by listen-together, streaks, and other non-chat events.
+func (h *Hub) BroadcastJSON(userIDs []string, payload any) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, uid := range userIDs {
+		for c := range h.conns[uid] {
+			c.Send(payload)
+		}
+	}
+}
+

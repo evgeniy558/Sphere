@@ -1689,6 +1689,9 @@ private struct MainAppView: View {
     @State private var seekScrubDirection: CGFloat = 0
     @State private var showShareTrackSheet: Bool = false
     @State private var shareCatalogTrack: CatalogTrack?
+    @State private var showListenTogetherInvite: Bool = false
+    @State private var showListenTogetherSession: Bool = false
+    @StateObject private var listenTogetherManager = ListenTogetherManager.shared
     /// Счётчики полноценных стартов воспроизведения по `track.id` (для «Часто прослушиваемое»).
     @State private var trackPlayCounts: [UUID: Int] = [:]
 
@@ -3105,6 +3108,7 @@ private struct MainAppView: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
+        .tabBarMinimizeBehavior(.onScrollDown)
         .tint(accent)
         .tabViewBottomAccessory {
             EmptyView()
@@ -3591,6 +3595,7 @@ private struct MainAppView: View {
                                     showShareTrackSheet = true
                                 },
                                 onLyricsTap: { showLyricsSheet = true },
+                                onListenTogether: { showListenTogetherInvite = true },
                                 onArtistTap: { openArtistByName(currentTrack.displayArtist) },
                                 tracks: tracksInPlaybackOrderForQueue,
                                 currentTrackIndex: tracksInPlaybackOrderForQueue.firstIndex(where: { $0.id == currentTrack.id }) ?? 0,
@@ -3678,6 +3683,7 @@ private struct MainAppView: View {
                             showShareTrackSheet = true
                         },
                         onLyricsTap: { showLyricsSheet = true },
+                        onListenTogether: { showListenTogetherInvite = true },
                         onArtistTap: { openArtistByName(currentTrack.displayArtist) },
                         tracks: tracksInPlaybackOrderForQueue,
                         currentTrackIndex: tracksInPlaybackOrderForQueue.firstIndex(where: { $0.id == currentTrack.id }) ?? 0,
@@ -3745,6 +3751,7 @@ private struct MainAppView: View {
                     showShareTrackSheet = true
                 },
                 onLyricsTap: { showLyricsSheet = true },
+                onListenTogether: { showListenTogetherInvite = true },
                 onArtistTap: { openArtistByName(currentTrack.displayArtist) },
                 tracks: tracksInPlaybackOrderForQueue,
                 currentTrackIndex: tracksInPlaybackOrderForQueue.firstIndex(where: { $0.id == currentTrack.id }) ?? 0,
@@ -4084,6 +4091,49 @@ private struct MainAppView: View {
                     showShareTrackSheet = false
                     shareCatalogTrack = nil
                 }
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { UpdateChecker.shared.pendingUpdate != nil },
+            set: { if !$0 { UpdateChecker.shared.markSeen() } }
+        )) {
+            if let update = UpdateChecker.shared.pendingUpdate {
+                UpdateAvailableSheet(update: update) {
+                    UpdateChecker.shared.markSeen()
+                }
+            }
+        }
+        .sheet(isPresented: $showListenTogetherInvite) {
+            if let ct = shareCatalogTrack ?? currentCatalogTrack {
+                ListenInviteSheet(track: ct, accent: accent, isEnglish: isEnglish, isDarkMode: isDarkMode) {
+                    showListenTogetherInvite = false
+                    showListenTogetherSession = true
+                }
+            }
+        }
+        .sheet(isPresented: $showListenTogetherSession) {
+            ListenTogetherView(accent: accent, isEnglish: isEnglish)
+        }
+        .overlay(alignment: .top) {
+            if let invite = listenTogetherManager.pendingInvite {
+                ListenInviteAlertView(
+                    invite: invite,
+                    accent: accent,
+                    isEnglish: isEnglish,
+                    onAccept: {
+                        Task {
+                            try? await listenTogetherManager.joinSession(sessionID: invite.session_id)
+                            listenTogetherManager.dismissInvite()
+                            showListenTogetherSession = true
+                        }
+                    },
+                    onDecline: {
+                        listenTogetherManager.dismissInvite()
+                    }
+                )
+                .padding(.top, 60)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: invite.session_id)
             }
         }
 	        .sheet(item: $presentedAlbum) { album in
@@ -6940,6 +6990,7 @@ private struct MiniPlayerBarView: View {
         let hideFromRecommendationsTitle: String
         let equalizerTitle: String
         let shareTitle: String
+        var listenTogetherTitle: String = "Listen Together"
         let controlsColor: Color
         let bottomIconColor: Color
         let bottomCircleTint: Color
@@ -6954,6 +7005,7 @@ private struct MiniPlayerBarView: View {
         let onOpenEqualizer: () -> Void
         let onShareTrack: () -> Void
         let onLyricsTap: () -> Void
+        var onListenTogether: () -> Void = {}
 
         var body: some View {
             HStack(spacing: 24) {
@@ -7057,6 +7109,11 @@ private struct MiniPlayerBarView: View {
                         } label: {
                             Label(equalizerTitle, systemImage: "slider.horizontal.3")
                         }
+                        Button {
+                            DispatchQueue.main.async { onListenTogether() }
+                        } label: {
+                            Label(listenTogetherTitle, systemImage: "person.2.wave.2")
+                        }
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.title2)
@@ -7159,6 +7216,11 @@ private struct MiniPlayerBarView: View {
                             DispatchQueue.main.async { onOpenEqualizer() }
                         } label: {
                             Label(equalizerTitle, systemImage: "slider.horizontal.3")
+                        }
+                        Button {
+                            DispatchQueue.main.async { onListenTogether() }
+                        } label: {
+                            Label(listenTogetherTitle, systemImage: "person.2.wave.2")
                         }
                     } label: {
                         Image(systemName: "ellipsis")
@@ -7763,6 +7825,7 @@ private struct MiniPlayerBarView: View {
         var onOpenEqualizer: () -> Void = {}
         var onShareCatalogTrack: (CatalogTrack) -> Void = { _ in }
         var onLyricsTap: () -> Void = {}
+        var onListenTogether: () -> Void = {}
         var onArtistTap: (() -> Void)? = nil
         /// Список треков и обложек для перелистывания (используется на iOS 26 в стилях 2 и 3).
         var tracks: [AppTrack] = []
@@ -8232,6 +8295,7 @@ private struct MiniPlayerBarView: View {
                                 hideFromRecommendationsTitle: hideFromRecommendationsTitle,
                                 equalizerTitle: equalizerSheetTitle,
                                 shareTitle: isEnglish ? "Share" : "Поделиться",
+                                listenTogetherTitle: isEnglish ? "Listen Together" : "Слушать вместе",
                                 controlsColor: controlsColor,
                                 bottomIconColor: {
                                     if #available(iOS 26.0, *) {
@@ -8261,7 +8325,8 @@ private struct MiniPlayerBarView: View {
                                     guard let ct = catalogTrack else { return }
                                     onShareCatalogTrack(ct)
                                 },
-                                onLyricsTap: onLyricsTap
+                                onLyricsTap: onLyricsTap,
+                                onListenTogether: onListenTogether
                             )
                             Spacer(minLength: 0)
                         }

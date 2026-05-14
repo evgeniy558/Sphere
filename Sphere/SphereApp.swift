@@ -49,7 +49,10 @@ struct SphereApp: App {
                     }
                 }
             }
-            .task { SphereBackendAuth.shared.start() }
+            .task {
+                SphereBackendAuth.shared.start()
+                await UpdateChecker.shared.checkForUpdates()
+            }
         }
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .background || newPhase == .inactive {

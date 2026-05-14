@@ -24,10 +24,11 @@ type Message struct {
 }
 
 type Thread struct {
-	ID            string     `json:"id"`
-	OtherUser     ThreadUser `json:"other_user"`
-	LastMessage   *Message   `json:"last_message,omitempty"`
-	LastMessageAt *time.Time `json:"last_message_at,omitempty"`
+	ID            string      `json:"id"`
+	OtherUser     ThreadUser  `json:"other_user"`
+	LastMessage   *Message    `json:"last_message,omitempty"`
+	LastMessageAt *time.Time  `json:"last_message_at,omitempty"`
+	Streak        *StreakInfo `json:"streak,omitempty"`
 }
 
 type SendMessageRequest struct {

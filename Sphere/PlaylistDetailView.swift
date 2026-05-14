@@ -12,130 +12,192 @@ struct PlaylistDetailView: View {
     let onShuffle: ([CatalogTrack]) -> Void
 
     @State private var isDownloading = false
+    @State private var dominantColor: Color?
+    @State private var coverImage: UIImage?
 
     private var tracks: [CatalogTrack] { playlist.tracks ?? [] }
     private var playlistLabel: String { isEnglish ? "Playlist" : "Плейлист" }
+    private var themeColor: Color { dominantColor ?? accent }
 
     var body: some View {
         NavigationStack {
             ZStack {
-                (isDarkMode ? Color.black : Color(.systemBackground)).ignoresSafeArea()
-                ScrollView(.vertical, showsIndicators: true) {
-                    VStack(alignment: .leading, spacing: 18) {
-                        header
-                        actionRow
+                // Background: blurred artwork + gradient
+                backgroundLayer
+                    .ignoresSafeArea()
+
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        heroHeader
+                        actionButtons
+                            .padding(.top, 16)
+                            .padding(.horizontal, 20)
                         trackList
+                            .padding(.top, 20)
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 4)
-                    .padding(.bottom, 36)
+                    .padding(.bottom, 40)
                 }
             }
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    HStack {
-                        Button { dismiss() } label: {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 18, weight: .semibold))
-                                .frame(width: 36, height: 36)
-                                .contentShape(Rectangle())
-                        }
-                        Spacer()
-                        Button { dismiss() } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 34, height: 34)
-                                .background(Circle().fill(Color.black.opacity(0.6)))
-                        }
-                        .buttonStyle(.plain)
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.8))
+                            .frame(width: 30, height: 30)
+                            .background(Circle().fill(.ultraThinMaterial))
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .toolbarBackground(.hidden, for: .navigationBar)
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Spacer(minLength: 0)
-                AlbumDetailArtwork(urlString: playlist.coverURL, accent: accent)
-                    .frame(width: 270, height: 270)
-                Spacer(minLength: 0)
+    // MARK: - Background
+
+    private var backgroundLayer: some View {
+        ZStack {
+            if let img = coverImage {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFill()
+                    .blur(radius: 60)
+                    .scaleEffect(1.3)
+                    .clipped()
             }
 
-            VStack(alignment: .leading, spacing: 8) {
+            LinearGradient(
+                colors: [
+                    themeColor.opacity(0.5),
+                    (isDarkMode ? Color.black : Color(.systemBackground)).opacity(0.7),
+                    (isDarkMode ? Color.black : Color(.systemBackground)),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+    }
+
+    // MARK: - Hero Header
+
+    private var heroHeader: some View {
+        VStack(spacing: 16) {
+            // Large cover artwork with shadow
+            AsyncImage(url: URL(string: playlist.coverURL ?? "")) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().scaledToFill()
+                        .onAppear { extractColor(from: phase) }
+                default:
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(themeColor.opacity(0.3))
+                        .overlay(
+                            Image(systemName: "music.note.list")
+                                .font(.system(size: 48))
+                                .foregroundStyle(.white.opacity(0.3))
+                        )
+                }
+            }
+            .frame(width: 280, height: 280)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: themeColor.opacity(0.4), radius: 24, y: 12)
+
+            // Title + subtitle
+            VStack(spacing: 6) {
                 Text(playlist.title)
-                    .font(.system(size: 34, weight: .heavy))
-                    .foregroundStyle(isDarkMode ? .white : .primary)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(.primary)
                     .lineLimit(2)
-                    .minimumScaleFactor(0.75)
+                    .multilineTextAlignment(.center)
 
                 Text(playlistLabel)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(.secondary)
-            }
-        }
-    }
 
-    private var actionRow: some View {
-        HStack(spacing: 16) {
-            AlbumDetailArtwork(urlString: playlist.coverURL, accent: accent)
-                .frame(width: 44, height: 44)
-
-            Button {
-                guard !tracks.isEmpty, !isDownloading else { return }
-                isDownloading = true
-                Task { @MainActor in
-                    defer { isDownloading = false }
-                    for t in tracks {
-                        try? await DownloadsStore.shared.download(track: t)
-                    }
+                if !tracks.isEmpty {
+                    Text("\(tracks.count) \(isEnglish ? "tracks" : (tracks.count == 1 ? "трек" : "треков"))")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.tertiary)
                 }
-            } label: {
-                Image(systemName: isDownloading ? "arrow.down.circle.fill" : "arrow.down.circle")
-                    .font(.system(size: 24, weight: .regular))
-                    .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .disabled(isDownloading || tracks.isEmpty)
+            .padding(.horizontal, 20)
+        }
+        .padding(.top, 20)
+    }
 
-            Spacer(minLength: 0)
+    // MARK: - Action Buttons (Apple Music capsule style)
 
-            Button { onShuffle(tracks) } label: {
-                Image(systemName: "shuffle")
-                    .font(.system(size: 23, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 48, height: 48)
+    private var actionButtons: some View {
+        HStack(spacing: 12) {
+            // Play button
+            Button { onPlayAll(tracks) } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text(isEnglish ? "Play" : "Играть")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .background(themeColor)
+                .foregroundStyle(.white)
+                .clipShape(Capsule())
             }
             .disabled(tracks.isEmpty)
 
-            Button { onPlayAll(tracks) } label: {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(
-                        Circle()
-                            .fill(LinearGradient(colors: [accent.opacity(0.95), accent.opacity(0.65)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    )
+            // Shuffle button
+            Button { onShuffle(tracks) } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "shuffle")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text(isEnglish ? "Shuffle" : "Перемешать")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .background(themeColor.opacity(0.18))
+                .foregroundStyle(themeColor)
+                .clipShape(Capsule())
             }
             .disabled(tracks.isEmpty)
         }
     }
+
+    // MARK: - Secondary actions (download)
+
+    // MARK: - Track List
 
     private var trackList: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(isEnglish ? "Tracks" : "Треки")
-                .font(.system(size: 22, weight: .bold))
-                .foregroundStyle(isDarkMode ? .white : .primary)
-                .padding(.top, 6)
+        VStack(alignment: .leading, spacing: 0) {
+            // Download button row
+            HStack {
+                Spacer()
+                Button {
+                    guard !tracks.isEmpty, !isDownloading else { return }
+                    isDownloading = true
+                    Task { @MainActor in
+                        defer { isDownloading = false }
+                        for t in tracks {
+                            try? await DownloadsStore.shared.download(track: t)
+                        }
+                    }
+                } label: {
+                    Image(systemName: isDownloading ? "arrow.down.circle.fill" : "arrow.down.circle")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(isDownloading || tracks.isEmpty)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 8)
 
             if tracks.isEmpty {
-                Text(isEnglish ? "No tracks yet" : "Пока нет треков")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                VStack(spacing: 8) {
+                    Spacer().frame(height: 40)
+                    SkeletonPlaylistHeader()
+                }
             } else {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(tracks.enumerated()), id: \.element.compositeKey) { idx, track in
@@ -147,13 +209,49 @@ struct PlaylistDetailView: View {
                         )
                         if idx < tracks.count - 1 {
                             Divider()
-                                .overlay(Color(.systemGray5))
-                                .padding(.leading, 48)
+                                .overlay(Color(.systemGray5).opacity(0.5))
+                                .padding(.leading, 56)
                         }
                     }
                 }
+                .padding(.horizontal, 4)
             }
         }
     }
+
+    // MARK: - Color Extraction
+
+    private func extractColor(from phase: AsyncImagePhase) {
+        guard case .success(let image) = phase else { return }
+        let renderer = ImageRenderer(content: image.resizable().frame(width: 50, height: 50))
+        renderer.scale = 1
+        guard let uiImage = renderer.uiImage else { return }
+        coverImage = uiImage
+        dominantColor = uiImage.averageColor.map { Color($0) }
+    }
 }
 
+// MARK: - UIImage Average Color
+
+private extension UIImage {
+    var averageColor: UIColor? {
+        guard let inputImage = CIImage(image: self) else { return nil }
+        let extent = inputImage.extent
+        let filter = CIFilter(name: "CIAreaAverage", parameters: [
+            kCIInputImageKey: inputImage,
+            kCIInputExtentKey: CIVector(cgRect: extent)
+        ])
+        guard let output = filter?.outputImage else { return nil }
+
+        var bitmap = [UInt8](repeating: 0, count: 4)
+        let context = CIContext(options: [.workingColorSpace: kCFNull as Any])
+        context.render(output, toBitmap: &bitmap, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: nil)
+
+        return UIColor(
+            red: CGFloat(bitmap[0]) / 255,
+            green: CGFloat(bitmap[1]) / 255,
+            blue: CGFloat(bitmap[2]) / 255,
+            alpha: 1.0
+        )
+    }
+}

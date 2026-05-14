@@ -100,6 +100,17 @@ func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(msg)
 }
 
+func (h *Handler) GetStreak(w http.ResponseWriter, r *http.Request) {
+	chatID := chi.URLParam(r, "id")
+	streak, err := GetStreakForChat(r.Context(), h.svc.db, chatID)
+	if err != nil {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(streak)
+}
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }

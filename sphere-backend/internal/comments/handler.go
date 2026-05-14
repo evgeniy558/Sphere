@@ -98,11 +98,11 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userName := r.Header.Get("X-User-Name")
-	if userName == "" {
+	userName, avatarURL, lookupErr := h.svc.GetUserInfo(r.Context(), userID)
+	if lookupErr != nil {
 		userName = "User"
+		avatarURL = ""
 	}
-	avatarURL := r.Header.Get("X-User-Avatar")
 
 	comment, err := h.svc.Create(r.Context(), prov, trackID, userID, userName, avatarURL, body.Text, body.ParentID)
 	if err != nil {

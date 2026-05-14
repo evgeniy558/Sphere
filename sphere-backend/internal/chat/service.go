@@ -60,6 +60,11 @@ func (s *Service) ListThreads(ctx context.Context, userID string) ([]Thread, err
 		if msg != nil {
 			t.LastMessage = msg
 		}
+		// Attach streak info.
+		streak, _ := GetStreak(ctx, s.db, userID, t.OtherUser.ID)
+		if streak != nil && streak.CurrentStreak >= 3 {
+			t.Streak = streak
+		}
 		out = append(out, t)
 	}
 	return out, rows.Err()
@@ -265,6 +270,9 @@ func (s *Service) SendMessage(ctx context.Context, senderID, chatID string, req 
 		_ = json.Unmarshal([]byte(payloadStr), &anyPayload)
 		m.Payload = anyPayload
 	}
+
+	// Record activity for streak tracking (fire-and-forget).
+	go RecordActivity(context.Background(), s.db, senderID, chatID, req.Kind)
 
 	return m, participants, nil
 }

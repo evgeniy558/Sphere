@@ -263,4 +263,50 @@ CREATE TABLE IF NOT EXISTS login_2fa_challenges (
 );
 
 CREATE INDEX IF NOT EXISTS login_2fa_challenges_user_idx ON login_2fa_challenges(user_id);
+
+-- Streak system: daily activity tracking per chat pair
+CREATE TABLE IF NOT EXISTS chat_daily_activity (
+    user1_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user2_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    activity_date DATE NOT NULL,
+    has_track_share BOOLEAN NOT NULL DEFAULT false,
+    has_discussion BOOLEAN NOT NULL DEFAULT false,
+    PRIMARY KEY (user1_id, user2_id, activity_date)
+);
+
+CREATE TABLE IF NOT EXISTS chat_streaks (
+    user1_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user2_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    current_streak INT NOT NULL DEFAULT 0,
+    last_activity_date DATE,
+    longest_streak INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (user1_id, user2_id)
+);
+
+-- Listen-together sessions
+CREATE TABLE IF NOT EXISTS listen_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    host_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    track_provider TEXT NOT NULL,
+    track_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','ended')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ended_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS listen_session_participants (
+    session_id UUID NOT NULL REFERENCES listen_sessions(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (session_id, user_id)
+);
+
+-- App update/release notes
+CREATE TABLE IF NOT EXISTS app_updates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    version TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 `

@@ -15,18 +15,20 @@ import (
 
 	"sphere-backend/internal/admin"
 	"sphere-backend/internal/auth"
-	"sphere-backend/internal/comments"
 	"sphere-backend/internal/chat"
+	"sphere-backend/internal/comments"
 	"sphere-backend/internal/config"
 	"sphere-backend/internal/db"
 	"sphere-backend/internal/favorites"
 	"sphere-backend/internal/history"
+	"sphere-backend/internal/listen"
 	"sphere-backend/internal/middleware"
 	"sphere-backend/internal/music"
 	"sphere-backend/internal/preferences"
 	"sphere-backend/internal/provider"
 	"sphere-backend/internal/recommend"
 	"sphere-backend/internal/social"
+	"sphere-backend/internal/updates"
 	"sphere-backend/internal/uploads"
 	"sphere-backend/internal/user"
 )
@@ -111,6 +113,9 @@ func main() {
 	commentsH := comments.NewHandler(commentsSvc)
 	socialH := social.NewHandler(socialSvc, favSvc, historySvc)
 	chatH := chat.NewHandler(chatSvc, chatHub, cfg.JWTSecret)
+	listenSvc := listen.NewService(pool)
+	listenH := listen.NewHandler(listenSvc, chatHub.BroadcastJSON)
+	updatesH := updates.NewHandler(pool)
 	adminH := admin.NewHandler(pool)
 
 	// Router
@@ -172,6 +177,9 @@ func main() {
 	r.Get("/artists/unified/{name}", musicH.GetUnifiedArtist)
 	r.Get("/albums/{provider}/{id}", musicH.GetAlbum)
 	r.Get("/playlists/{provider}/{id}", musicH.GetPlaylist)
+
+	// Public: latest app update
+	r.Get("/updates/latest", updatesH.LatestUpdate)
 
 	// Chat WebSocket (auth via ?token=JWT)
 	r.Get("/ws", chatH.WS)
@@ -250,6 +258,21 @@ func main() {
 		r.Post("/chats", chatH.OpenOrCreateDM)
 		r.Get("/chats/{id}/messages", chatH.ListMessages)
 		r.Post("/chats/{id}/messages", chatH.SendMessage)
+		r.Get("/chats/{id}/streak", chatH.GetStreak)
+
+		// Listen-together sessions
+		r.Post("/listen/sessions", listenH.Create)
+		r.Get("/listen/sessions/{id}", listenH.Get)
+		r.Post("/listen/sessions/{id}/join", listenH.Join)
+		r.Post("/listen/sessions/{id}/leave", listenH.Leave)
+		r.Post("/listen/sessions/{id}/invite", listenH.Invite)
+		r.Post("/listen/sessions/{id}/sync", listenH.Sync)
+		r.Post("/listen/sessions/{id}/webrtc", listenH.WebRTCSignal)
+		r.Delete("/listen/sessions/{id}", listenH.End)
+
+		// Admin: updates management
+		r.With(middleware.AdminOnly(pool)).Post("/admin/updates", updatesH.CreateUpdate)
+		r.With(middleware.AdminOnly(pool)).Get("/admin/updates", updatesH.ListUpdates)
 	})
 
 	// Server

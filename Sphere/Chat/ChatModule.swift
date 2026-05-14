@@ -106,6 +106,13 @@ final class ChatStore: ObservableObject {
 
     private func handleEventString(_ s: String) {
         guard let data = s.data(using: .utf8) else { return }
+
+        // Forward listen-together events to the dedicated manager.
+        if s.contains("\"listen.") {
+            ListenTogetherManager.shared.handleWSEvent(data)
+            return
+        }
+
         guard let ev = try? JSONDecoder().decode(BackendWSMessageEvent.self, from: data) else { return }
         if ev.type == "chat.message" {
             Task { @MainActor in
@@ -122,7 +129,8 @@ final class ChatStore: ObservableObject {
                         id: t.id,
                         other_user: t.other_user,
                         last_message: ev.message,
-                        last_message_at: ev.message.created_at
+                        last_message_at: ev.message.created_at,
+                        streak: t.streak
                     )
                     // keep other_user unchanged; only update last message fields
                     newThreads.remove(at: idx)
@@ -168,15 +176,30 @@ struct ChatListView: View {
                 NavigationLink {
                     ChatScreen(chatID: t.id, otherUserName: t.other_user.name.isEmpty ? t.other_user.username : t.other_user.name, accent: accent, isEnglish: isEnglish)
                 } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(t.other_user.name.isEmpty ? t.other_user.username : t.other_user.name)
-                            .font(.system(size: 16, weight: .semibold))
-                        if let lm = t.last_message {
-                            Text(lm.kind == "text" ? (lm.text ?? "") : (isEnglish ? "Shared a track" : "Поделился треком"))
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(t.other_user.name.isEmpty ? t.other_user.username : t.other_user.name)
+                                    .font(.system(size: 16, weight: .semibold))
+                                if let streak = t.streak, streak.current_streak >= 3 {
+                                    HStack(spacing: 2) {
+                                        Image(systemName: "flame.fill")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(.orange)
+                                        Text("\(streak.current_streak)")
+                                            .font(.system(size: 12, weight: .bold))
+                                            .foregroundStyle(.orange)
+                                    }
+                                }
+                            }
+                            if let lm = t.last_message {
+                                Text(lm.kind == "text" ? (lm.text ?? "") : (isEnglish ? "Shared a track" : "Поделился треком"))
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
                         }
+                        Spacer()
                     }
                 }
             }
@@ -282,6 +305,25 @@ struct ChatScreen: View {
         }
         .navigationTitle(otherUserName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 6) {
+                    Text(otherUserName)
+                        .font(.headline)
+                    if let thread = store.threads.first(where: { $0.id == chatID }),
+                       let streak = thread.streak, streak.current_streak >= 3 {
+                        HStack(spacing: 2) {
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 13))
+                                .foregroundStyle(.orange)
+                            Text("\(streak.current_streak)")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                }
+            }
+        }
         .task {
             await store.loadMessages(chatID: chatID)
             store.connectWS()

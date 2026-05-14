@@ -536,6 +536,96 @@ final class SphereAPIClient: ObservableObject {
         let _: EmptyResponse = try await request(path: "/user/preferences", method: "POST", body: body)
     }
 
+    // MARK: - App Updates
+
+    func getLatestUpdate() async throws -> AppUpdateInfo? {
+        let result: AppUpdateInfo? = try await request(
+            path: "/updates/latest",
+            method: "GET",
+            requiresAuth: false
+        )
+        return result
+    }
+
+    // MARK: - Listen Together
+
+    func createListenSession(trackProvider: String, trackID: String) async throws -> ListenSession {
+        try await request(
+            path: "/listen/sessions",
+            method: "POST",
+            body: ["track_provider": trackProvider, "track_id": trackID]
+        )
+    }
+
+    func joinListenSession(sessionID: String) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/listen/sessions/\(escape(sessionID))/join",
+            method: "POST"
+        )
+    }
+
+    func leaveListenSession(sessionID: String) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/listen/sessions/\(escape(sessionID))/leave",
+            method: "POST"
+        )
+    }
+
+    func endListenSession(sessionID: String) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/listen/sessions/\(escape(sessionID))",
+            method: "DELETE"
+        )
+    }
+
+    func getListenSession(sessionID: String) async throws -> ListenSession {
+        try await request(
+            path: "/listen/sessions/\(escape(sessionID))",
+            method: "GET"
+        )
+    }
+
+    func sendListenInvite(sessionID: String, targetUserID: String, trackTitle: String, trackArtist: String, trackCoverURL: String) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/listen/sessions/\(escape(sessionID))/invite",
+            method: "POST",
+            body: [
+                "target_user_id": targetUserID,
+                "track_title": trackTitle,
+                "track_artist": trackArtist,
+                "track_cover_url": trackCoverURL,
+            ]
+        )
+    }
+
+    func sendListenSync(sessionID: String, trackProvider: String, trackID: String, positionSeconds: Double, isPlaying: Bool) async throws {
+        let _: EmptyResponse = try await request(
+            path: "/listen/sessions/\(escape(sessionID))/sync",
+            method: "POST",
+            body: [
+                "track_provider": trackProvider,
+                "track_id": trackID,
+                "position_seconds": positionSeconds,
+                "is_playing": isPlaying,
+            ] as [String : Any]
+        )
+    }
+
+    // MARK: - WebRTC Signaling
+
+    func sendWebRTCSignal(sessionID: String, targetUserID: String, signalType: String, payload: [String: Any]) async throws {
+        let body: [String: Any] = [
+            "target_user_id": targetUserID,
+            "signal_type": signalType,
+            "payload": payload,
+        ]
+        let _: EmptyResponse = try await request(
+            path: "/listen/sessions/\(escape(sessionID))/webrtc",
+            method: "POST",
+            body: body
+        )
+    }
+
     // MARK: - Account (password, email, avatar)
 
     func fetchCurrentUser() async throws -> BackendUser {
@@ -1010,4 +1100,61 @@ struct BackendChatThread: Decodable, Identifiable {
     let other_user: BackendChatThreadUser
     let last_message: BackendChatMessage?
     let last_message_at: String?
+    let streak: StreakInfo?
+}
+
+struct StreakInfo: Decodable {
+    let current_streak: Int
+    let longest_streak: Int
+    let last_activity_date: String?
+}
+
+// MARK: - App Updates
+
+struct AppUpdateInfo: Decodable {
+    let id: String
+    let version: String
+    let title: String
+    let body: String
+    let created_at: String
+}
+
+// MARK: - Listen Together
+
+struct ListenSession: Decodable {
+    let id: String
+    let host_id: String
+    let track_provider: String
+    let track_id: String
+    let status: String
+    let created_at: String
+    let ended_at: String?
+    let participants: [ListenParticipant]?
+}
+
+struct ListenParticipant: Decodable {
+    let user_id: String
+    let username: String
+    let name: String
+    let avatar_url: String
+    let joined_at: String
+}
+
+struct ListenInviteEvent: Decodable {
+    let session_id: String
+    let from_user_id: String
+    let from_username: String
+    let track_provider: String
+    let track_id: String
+    let track_title: String
+    let track_artist: String
+    let track_cover_url: String
+}
+
+struct ListenSyncEvent: Decodable {
+    let session_id: String
+    let track_provider: String
+    let track_id: String
+    let position_seconds: Double
+    let is_playing: Bool
 }

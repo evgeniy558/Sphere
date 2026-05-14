@@ -67,6 +67,17 @@ func NewService(pool *pgxpool.Pool, cfg *config.Config) (*Service, error) {
 	}, nil
 }
 
+// GetUserInfo fetches the display name and avatar URL for a user from the DB.
+// Falls back to "User" / "" when the row is missing.
+func (s *Service) GetUserInfo(ctx context.Context, userID string) (name string, avatarURL string, err error) {
+	err = s.pool.QueryRow(ctx,
+		`SELECT COALESCE(NULLIF(name,''), NULLIF(username,''), 'User'),
+		        COALESCE(avatar_url, '')
+		 FROM users WHERE id = $1`, userID,
+	).Scan(&name, &avatarURL)
+	return
+}
+
 func (s *Service) encrypt(plaintext string) (ciphertext, nonce []byte, err error) {
 	return crypto.EncryptString(s.gcm, plaintext)
 }
