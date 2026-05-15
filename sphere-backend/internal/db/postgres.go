@@ -309,4 +309,70 @@ CREATE TABLE IF NOT EXISTS app_updates (
     body TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- User-created playlists (group playlists)
+CREATE TABLE IF NOT EXISTS user_playlists (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    cover_url TEXT NOT NULL DEFAULT '',
+    is_public BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS user_playlists_owner_idx ON user_playlists(owner_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS user_playlist_tracks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    playlist_id UUID NOT NULL REFERENCES user_playlists(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    track_id TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    artist TEXT NOT NULL DEFAULT '',
+    cover_url TEXT NOT NULL DEFAULT '',
+    duration INT NOT NULL DEFAULT 0,
+    added_by UUID NOT NULL REFERENCES users(id),
+    position INT NOT NULL DEFAULT 0,
+    added_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS user_playlist_tracks_playlist_idx ON user_playlist_tracks(playlist_id, position ASC);
+
+CREATE TABLE IF NOT EXISTS user_playlist_members (
+    playlist_id UUID NOT NULL REFERENCES user_playlists(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('editor', 'viewer')),
+    added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (playlist_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS user_playlist_members_user_idx ON user_playlist_members(user_id);
+
+-- My Wave: user taste profiles
+CREATE TABLE IF NOT EXISTS user_taste_profiles (
+    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    genre_weights JSONB NOT NULL DEFAULT '{}',
+    artist_weights JSONB NOT NULL DEFAULT '{}',
+    provider_weights JSONB NOT NULL DEFAULT '{}',
+    energy_pref DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+    valence_pref DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+    tempo_pref DOUBLE PRECISION NOT NULL DEFAULT 120,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- My Wave: events (like/dislike/skip/finish)
+CREATE TABLE IF NOT EXISTS wave_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    session_id UUID NOT NULL,
+    provider TEXT NOT NULL,
+    track_id TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK (event_type IN ('play','like','dislike','skip','finish','add_to_library')),
+    position_seconds DOUBLE PRECISION NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS wave_events_user_session_idx ON wave_events(user_id, session_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS wave_events_user_time_idx ON wave_events(user_id, created_at DESC);
+
+-- Index for similar users query performance
+CREATE INDEX IF NOT EXISTS listen_history_artist_user_idx ON listen_history(artist, user_id) WHERE artist <> '';
 `

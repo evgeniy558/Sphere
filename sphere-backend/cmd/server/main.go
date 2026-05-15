@@ -24,6 +24,7 @@ import (
 	"sphere-backend/internal/listen"
 	"sphere-backend/internal/middleware"
 	"sphere-backend/internal/music"
+	"sphere-backend/internal/playlist"
 	"sphere-backend/internal/preferences"
 	"sphere-backend/internal/provider"
 	"sphere-backend/internal/recommend"
@@ -31,6 +32,7 @@ import (
 	"sphere-backend/internal/updates"
 	"sphere-backend/internal/uploads"
 	"sphere-backend/internal/user"
+	"sphere-backend/internal/wave"
 )
 
 // gitCommit is overridden at build-time via `-ldflags "-X main.gitCommit=<sha>"`.
@@ -87,7 +89,7 @@ func main() {
 	musicSvc := music.NewService(providers...)
 	music.SetGeniusToken(cfg.GeniusToken)
 	prefsSvc := preferences.NewService(pool)
-	recommendSvc := recommend.NewService(historySvc, musicSvc, prefsSvc, favSvc, spotifyRef)
+	recommendSvc := recommend.NewService(pool, historySvc, musicSvc, prefsSvc, favSvc, spotifyRef)
 	commentsSvc, err := comments.NewService(pool, cfg)
 	if err != nil {
 		log.Fatal("comments init: ", err)
@@ -113,7 +115,11 @@ func main() {
 	commentsH := comments.NewHandler(commentsSvc)
 	socialH := social.NewHandler(socialSvc, favSvc, historySvc)
 	chatH := chat.NewHandler(chatSvc, chatHub, cfg.JWTSecret)
+	playlistSvc := playlist.NewService(pool)
+	waveSvc := wave.NewService(pool, historySvc, favSvc, musicSvc, spotifyRef)
 	listenSvc := listen.NewService(pool)
+	playlistH := playlist.NewHandler(playlistSvc)
+	waveH := wave.NewHandler(waveSvc)
 	listenH := listen.NewHandler(listenSvc, chatHub.BroadcastJSON)
 	updatesH := updates.NewHandler(pool)
 	adminH := admin.NewHandler(pool)
@@ -269,6 +275,27 @@ func main() {
 		r.Post("/listen/sessions/{id}/sync", listenH.Sync)
 		r.Post("/listen/sessions/{id}/webrtc", listenH.WebRTCSignal)
 		r.Delete("/listen/sessions/{id}", listenH.End)
+
+		// Group playlists
+		r.Post("/playlists/create", playlistH.Create)
+		r.Get("/playlists/mine", playlistH.ListMine)
+		r.Get("/playlists/user/{id}", playlistH.GetByID)
+		r.Put("/playlists/user/{id}", playlistH.Update)
+		r.Delete("/playlists/user/{id}", playlistH.Delete)
+		r.Post("/playlists/user/{id}/tracks", playlistH.AddTrack)
+		r.Delete("/playlists/user/{id}/tracks/{trackID}", playlistH.RemoveTrack)
+		r.Put("/playlists/user/{id}/tracks/reorder", playlistH.ReorderTracks)
+		r.Post("/playlists/user/{id}/members", playlistH.AddMember)
+		r.Delete("/playlists/user/{id}/members/{userID}", playlistH.RemoveMember)
+		r.Get("/playlists/user/{id}/members", playlistH.ListMembers)
+
+		// My Wave
+		r.Post("/wave/start", waveH.StartSession)
+		r.Get("/wave/next", waveH.NextTracks)
+		r.Post("/wave/event", waveH.RecordEvent)
+		r.Get("/wave/profile", waveH.GetProfile)
+		r.Get("/wave/offline-package", waveH.GetOfflinePackage)
+		r.Post("/wave/sync", waveH.SyncOfflineEvents)
 
 		// Admin: updates management
 		r.With(middleware.AdminOnly(pool)).Post("/admin/updates", updatesH.CreateUpdate)

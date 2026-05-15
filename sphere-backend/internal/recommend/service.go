@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"sphere-backend/internal/favorites"
 	"sphere-backend/internal/history"
 	"sphere-backend/internal/model"
@@ -26,25 +28,36 @@ type cachedFeed struct {
 	expiresAt time.Time
 }
 
+const similarUsersCacheTTL = 30 * time.Minute
+
+type cachedSimilar struct {
+	value     []model.SimilarUserInfo
+	expiresAt time.Time
+}
+
 type Service struct {
+	db        *pgxpool.Pool
 	history   *history.Service
 	music     *music.Service
 	prefs     *preferences.Service
 	favorites *favorites.Service
 	spotify   *provider.Spotify
 
-	cacheMu sync.Mutex
-	cache   map[string]cachedFeed
+	cacheMu      sync.Mutex
+	cache        map[string]cachedFeed
+	similarCache map[string]cachedSimilar
 }
 
-func NewService(h *history.Service, m *music.Service, p *preferences.Service, f *favorites.Service, sp *provider.Spotify) *Service {
+func NewService(db *pgxpool.Pool, h *history.Service, m *music.Service, p *preferences.Service, f *favorites.Service, sp *provider.Spotify) *Service {
 	return &Service{
-		history:   h,
-		music:     m,
-		prefs:     p,
-		favorites: f,
-		spotify:   sp,
-		cache:     make(map[string]cachedFeed),
+		db:           db,
+		history:      h,
+		music:        m,
+		prefs:        p,
+		favorites:    f,
+		spotify:      sp,
+		cache:        make(map[string]cachedFeed),
+		similarCache: make(map[string]cachedSimilar),
 	}
 }
 
@@ -104,10 +117,53 @@ func (s *Service) GetRecommendations(ctx context.Context, userID, lang string) *
 		return empty
 	}
 
+	// Enrich with similar users (separate cache, non-fatal).
+	eng.SimilarUsers = s.getSimilarUsers(ctx, userID)
+
 	s.storeRecommendations(key, eng)
-	log.Printf("[recommend-cache] miss-stored user=%s lang=%s tracks=%d albums=%d artists=%d ttl=%s",
-		userID, lang, len(eng.Tracks), len(eng.Albums), len(eng.Artists), recommendationsCacheTTL)
+	log.Printf("[recommend-cache] miss-stored user=%s lang=%s tracks=%d albums=%d artists=%d similar=%d ttl=%s",
+		userID, lang, len(eng.Tracks), len(eng.Albums), len(eng.Artists), len(eng.SimilarUsers), recommendationsCacheTTL)
 	return eng
+}
+
+func (s *Service) getSimilarUsers(ctx context.Context, userID string) []model.SimilarUserInfo {
+	// Check 30-min cache.
+	s.cacheMu.Lock()
+	if entry, ok := s.similarCache[userID]; ok && time.Now().Before(entry.expiresAt) {
+		s.cacheMu.Unlock()
+		return entry.value
+	}
+	s.cacheMu.Unlock()
+
+	// Build user's taste profile for comparison.
+	genres, err := s.history.TopGenresWeighted(ctx, userID, 20)
+	if err != nil {
+		genres = map[string]float64{}
+	}
+	artists, err := s.history.TopArtistsWeighted(ctx, userID, 15)
+	if err != nil {
+		artists = map[string]float64{}
+	}
+	favArtists, err := s.favorites.TopArtistsWeighted(ctx, userID, 10)
+	if err == nil {
+		for k, v := range favArtists {
+			if existing, ok := artists[k]; !ok || v > existing {
+				artists[k] = v
+			}
+		}
+	}
+
+	similar := FindSimilarUsers(ctx, s.db, userID, genres, artists, 10)
+	if similar == nil {
+		similar = []model.SimilarUserInfo{}
+	}
+
+	// Cache.
+	s.cacheMu.Lock()
+	s.similarCache[userID] = cachedSimilar{value: similar, expiresAt: time.Now().Add(similarUsersCacheTTL)}
+	s.cacheMu.Unlock()
+
+	return similar
 }
 
 // GetDailyMixes returns four personalized track bundles.

@@ -216,6 +216,136 @@ func (s *Service) PeerInfluencedTracks(ctx context.Context, userID string, limit
 	return out, nil
 }
 
+// TopGenresWeighted returns genre-name → normalized weight (0-1) for the user.
+func (s *Service) TopGenresWeighted(ctx context.Context, userID string, n int) (map[string]float64, error) {
+	rows, err := s.db.Query(ctx,
+		`SELECT unnest(genres) AS g, COUNT(*) AS c
+		   FROM listen_history
+		  WHERE user_id = $1 AND listened_at > now() - interval '30 days'
+		  GROUP BY g ORDER BY c DESC LIMIT $2`,
+		userID, n,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	raw := make(map[string]int)
+	maxC := 1
+	for rows.Next() {
+		var g string
+		var c int
+		if err := rows.Scan(&g, &c); err != nil {
+			continue
+		}
+		if g == "" {
+			continue
+		}
+		raw[g] = c
+		if c > maxC {
+			maxC = c
+		}
+	}
+	out := make(map[string]float64, len(raw))
+	for g, c := range raw {
+		out[g] = float64(c) / float64(maxC)
+	}
+	return out, nil
+}
+
+// TopArtistsWeighted returns artist-name → normalized weight (0-1) for the user.
+func (s *Service) TopArtistsWeighted(ctx context.Context, userID string, n int) (map[string]float64, error) {
+	rows, err := s.db.Query(ctx,
+		`SELECT artist, COUNT(*) AS c
+		   FROM listen_history
+		  WHERE user_id = $1 AND listened_at > now() - interval '30 days' AND artist <> ''
+		  GROUP BY artist ORDER BY c DESC LIMIT $2`,
+		userID, n,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	raw := make(map[string]int)
+	maxC := 1
+	for rows.Next() {
+		var a string
+		var c int
+		if err := rows.Scan(&a, &c); err != nil {
+			continue
+		}
+		raw[a] = c
+		if c > maxC {
+			maxC = c
+		}
+	}
+	out := make(map[string]float64, len(raw))
+	for a, c := range raw {
+		out[a] = float64(c) / float64(maxC)
+	}
+	return out, nil
+}
+
+// ProviderWeights returns provider → normalized weight from listen history.
+func (s *Service) ProviderWeights(ctx context.Context, userID string) (map[string]float64, error) {
+	rows, err := s.db.Query(ctx,
+		`SELECT provider, COUNT(*) AS c
+		   FROM listen_history
+		  WHERE user_id = $1 AND listened_at > now() - interval '30 days'
+		  GROUP BY provider ORDER BY c DESC`,
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	raw := make(map[string]int)
+	total := 0
+	for rows.Next() {
+		var p string
+		var c int
+		if err := rows.Scan(&p, &c); err != nil {
+			continue
+		}
+		raw[p] = c
+		total += c
+	}
+	if total == 0 {
+		return map[string]float64{"spotify": 0.25, "deezer": 0.25, "youtube": 0.25, "soundcloud": 0.25}, nil
+	}
+	out := make(map[string]float64, len(raw))
+	for p, c := range raw {
+		out[p] = float64(c) / float64(total)
+	}
+	return out, nil
+}
+
+// RecentSpotifyTrackIDs returns up to n recent Spotify track IDs for audio feature lookups.
+func (s *Service) RecentSpotifyTrackIDs(ctx context.Context, userID string, n int) ([]string, error) {
+	rows, err := s.db.Query(ctx,
+		`SELECT DISTINCT track_id FROM listen_history
+		  WHERE user_id = $1 AND provider = 'spotify'
+		    AND listened_at > now() - interval '30 days'
+		  ORDER BY track_id LIMIT $2`,
+		userID, n,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
 func (s *Service) TopArtists(ctx context.Context, userID string, n int) ([]string, error) {
 	rows, err := s.db.Query(ctx,
 		`SELECT artist, COUNT(*) AS c

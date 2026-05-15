@@ -77,9 +77,22 @@ type DailyMix struct {
 	Tracks   []Track `json:"tracks"`
 }
 
+// SimilarUserInfo is returned in /recommendations under similar_users[].
+type SimilarUserInfo struct {
+	ID              string   `json:"id"`
+	Username        string   `json:"username"`
+	Name            string   `json:"name"`
+	AvatarURL       string   `json:"avatar_url"`
+	IsVerified      bool     `json:"is_verified"`
+	SharedGenres    []string `json:"shared_genres"`
+	SharedArtists   []string `json:"shared_artists"`
+	SimilarityScore float64  `json:"similarity_score"`
+}
+
 // RecommendationFeed is the /recommendations JSON payload.
 type RecommendationFeed struct {
-	Tracks  []Track  `json:"tracks"`
-	Albums  []Album  `json:"albums"`
-	Artists []Artist `json:"artists"`
+	Tracks       []Track           `json:"tracks"`
+	Albums       []Album           `json:"albums"`
+	Artists      []Artist          `json:"artists"`
+	SimilarUsers []SimilarUserInfo `json:"similar_users"`
 }
