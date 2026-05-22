@@ -564,6 +564,7 @@ func (h *Handler) DownloadTrack(w http.ResponseWriter, r *http.Request) {
 	prov := chi.URLParam(r, "provider")
 	id := chi.URLParam(r, "id")
 	quality := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("quality")))
+	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
 
 	meta, _ := h.svc.GetTrack(r.Context(), prov, id)
 	base := "track"
@@ -577,9 +578,7 @@ func (h *Handler) DownloadTrack(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Deezer + ARL: stream the decrypted bytes directly. The CDN already serves
-	// the format (MP3 or FLAC) we need, so re-encoding through ffmpeg would only
-	// add latency and (for FLAC→MP3) destroy the whole point of lossless.
+	// Deezer + ARL: stream the decrypted bytes directly.
 	if prov == "deezer" {
 		if dz := h.svc.DeezerProvider(); dz != nil && dz.HasFullTrackSession() {
 			if h.downloadDeezer(w, r, dz, id, quality, base) {
@@ -588,14 +587,38 @@ func (h *Handler) DownloadTrack(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Spotify: stream decrypted OGG (or transcode to MP3 if requested).
+	if prov == "spotify" {
+		if sp := h.svc.SpotifyProvider(); sp != nil && sp.HasFullTrackSession() {
+			if h.downloadSpotify(w, r, sp, id, quality, format, base) {
+				return
+			}
+		}
+		http.Error(w, `{"error":"download_not_available"}`, http.StatusConflict)
+		return
+	}
+
 	streamURL, err := h.svc.GetTrackStreamURL(r.Context(), prov, id)
 	if err != nil || strings.TrimSpace(streamURL) == "" {
-		if prov == "spotify" {
-			http.Error(w, `{"error":"download_not_available"}`, http.StatusConflict)
-			return
-		}
 		http.Error(w, `{"error":"stream not available"}`, http.StatusNotFound)
 		return
+	}
+
+	// SoundCloud: direct CDN download without re-encoding.
+	if prov == "soundcloud" {
+		if h.downloadDirect(w, r, streamURL, "audio/mpeg", base+".mp3") {
+			return
+		}
+		// fall through to ffmpeg if direct download fails
+	}
+
+	// Quality-aware bitrate for ffmpeg transcoding.
+	bitrate := "192k"
+	switch quality {
+	case "high", "320":
+		bitrate = "320k"
+	case "low", "128":
+		bitrate = "128k"
 	}
 
 	w.Header().Set("Content-Type", "audio/mpeg")
@@ -610,7 +633,7 @@ func (h *Handler) DownloadTrack(w http.ResponseWriter, r *http.Request) {
 		"-i", streamURL,
 		"-vn",
 		"-c:a", "libmp3lame",
-		"-b:a", "192k",
+		"-b:a", bitrate,
 		"-f", "mp3",
 		"pipe:1",
 	)
@@ -636,6 +659,141 @@ func (h *Handler) DownloadTrack(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// downloadSpotify streams a decrypted Spotify track as an attachment.
+// If format=mp3, transcodes OGG→MP3 via ffmpeg. Returns true when handled.
+func (h *Handler) downloadSpotify(w http.ResponseWriter, r *http.Request, sp *provider.Spotify, trackID, quality, format, basename string) bool {
+	var ladder []int
+	switch quality {
+	case "high", "320", "ogg_320":
+		ladder = []int{320, 160, 96}
+	case "low", "96", "ogg_96":
+		ladder = []int{96}
+	default:
+		ladder = []int{320, 160, 96}
+	}
+
+	sess := sp.FullTrackSession()
+	if sess == nil {
+		return false
+	}
+
+	var (
+		reader  io.ReadCloser
+		size    int64
+		fmtStr  string
+		lastErr error
+	)
+	for _, br := range ladder {
+		rc, sz, f, err := sess.ResolveDecryptedStream(r.Context(), trackID, br)
+		if err == nil && rc != nil {
+			reader = rc
+			size = sz
+			fmtStr = f.String()
+			break
+		}
+		lastErr = err
+	}
+	if reader == nil {
+		log.Printf("[spotify-download] resolve %s ladder=%v failed: %v", trackID, ladder, lastErr)
+		return false
+	}
+	defer reader.Close()
+
+	// If MP3 format requested, transcode OGG→MP3 via ffmpeg pipe.
+	if format == "mp3" {
+		bitrate := "192k"
+		switch quality {
+		case "high", "320":
+			bitrate = "320k"
+		case "low", "128":
+			bitrate = "128k"
+		}
+
+		w.Header().Set("Content-Type", "audio/mpeg")
+		w.Header().Set("Content-Disposition", `attachment; filename="`+basename+`.mp3"`)
+		w.Header().Set("Cache-Control", "private, max-age=3600")
+
+		cmd := exec.CommandContext(
+			r.Context(),
+			"ffmpeg",
+			"-hide_banner",
+			"-loglevel", "error",
+			"-i", "pipe:0",
+			"-vn",
+			"-c:a", "libmp3lame",
+			"-b:a", bitrate,
+			"-f", "mp3",
+			"pipe:1",
+		)
+		cmd.Stdin = reader
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			http.Error(w, `{"error":"ffmpeg failed"}`, http.StatusInternalServerError)
+			return true
+		}
+		if err := cmd.Start(); err != nil {
+			http.Error(w, `{"error":"ffmpeg failed"}`, http.StatusInternalServerError)
+			return true
+		}
+
+		log.Printf("[spotify-download] %s transcoding OGG→MP3 %s format=%s", trackID, bitrate, fmtStr)
+		_, _ = io.Copy(w, stdout)
+		_ = stdout.Close()
+		_ = cmd.Wait()
+		return true
+	}
+
+	// Default: serve OGG directly.
+	w.Header().Set("Content-Type", "audio/ogg")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+basename+`.ogg"`)
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("X-Sphere-Audio-Quality", fmtStr)
+	if size > 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	}
+	w.WriteHeader(http.StatusOK)
+	log.Printf("[spotify-download] %s ok format=%s size=%d", trackID, fmtStr, size)
+
+	_, _ = io.Copy(w, reader)
+	return true
+}
+
+// downloadDirect fetches a URL and serves it as an attachment without re-encoding.
+func (h *Handler) downloadDirect(w http.ResponseWriter, r *http.Request, streamURL, contentType, filename string) bool {
+	transport := &http.Transport{ResponseHeaderTimeout: 15 * time.Second}
+	client := &http.Client{Transport: transport, Timeout: 0}
+	req, err := http.NewRequestWithContext(r.Context(), "GET", streamURL, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[download-direct] fetch error: %v", err)
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		log.Printf("[download-direct] upstream HTTP %d", resp.StatusCode)
+		return false
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	if cl := resp.Header.Get("Content-Length"); cl != "" {
+		w.Header().Set("Content-Length", cl)
+	}
+	w.WriteHeader(http.StatusOK)
+
+	_, copyErr := io.Copy(w, resp.Body)
+	if copyErr != nil {
+		log.Printf("[download-direct] copy error: %v", copyErr)
+	}
+	return true
 }
 
 // downloadDeezer streams a decrypted Deezer track (MP3 or FLAC) as an

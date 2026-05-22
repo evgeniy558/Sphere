@@ -200,11 +200,52 @@ func (s *Service) NextTracks(ctx context.Context, userID, sessionID string, coun
 	// Get recently played tracks (last 7 days) for novelty scoring.
 	recentlyPlayed := s.recentlyPlayedSet(ctx, userID)
 
-	// Score every candidate.
+	// Score every candidate — try NodeX AI first, fall back to manual.
 	scored := make([]ScoredTrack, 0, len(candidates))
-	for _, t := range candidates {
-		sc := s.scoreTrack(t, profile, recentlyPlayed, peerSet)
-		scored = append(scored, ScoredTrack{Track: t, Score: sc})
+	if NodeXAvailable() && len(candidates) > 0 {
+		uc := s.buildUserContext(ctx, userID)
+		featureVecs := make([][]float64, len(candidates))
+		for i, t := range candidates {
+			key := t.Provider + ":" + t.ID
+			novelty := 1.0
+			if recentlyPlayed[key] {
+				novelty = 0.0
+			}
+			peer := 0.0
+			if peerSet[key] {
+				peer = 1.0
+			}
+			e, v := estimateAudioFeatures(t.Genres)
+			genreMatch := 0.0
+			for _, g := range t.Genres {
+				genreMatch += profile.GenreWeights[strings.ToLower(g)]
+			}
+			if len(t.Genres) > 0 {
+				genreMatch /= float64(len(t.Genres))
+			}
+			artistMatch := profile.ArtistWeights[t.Artist]
+			featureVecs[i] = buildFeatureVector(e, v, 120.0, 0.5,
+				t.Genres, uc, profile, genreMatch, artistMatch, novelty, peer)
+		}
+		if scores, err := scoreTracksNodeX(featureVecs); err == nil && len(scores) == len(candidates) {
+			log.Printf("[wave] NodeX AI scoring %d candidates", len(candidates))
+			for i, t := range candidates {
+				scored = append(scored, ScoredTrack{Track: t, Score: scores[i]})
+			}
+		} else {
+			if err != nil {
+				log.Printf("[wave] NodeX scoring failed, fallback to manual: %v", err)
+			}
+			for _, t := range candidates {
+				sc := s.scoreTrack(t, profile, recentlyPlayed, peerSet)
+				scored = append(scored, ScoredTrack{Track: t, Score: sc})
+			}
+		}
+	} else {
+		for _, t := range candidates {
+			sc := s.scoreTrack(t, profile, recentlyPlayed, peerSet)
+			scored = append(scored, ScoredTrack{Track: t, Score: sc})
+		}
 	}
 
 	// Deduplicate by artist+title (keep highest score).

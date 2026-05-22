@@ -63,6 +63,11 @@ func NewService(db *pgxpool.Pool, s3Endpoint, accessKey, secretKey, bucket strin
 	return &Service{db: db, s3: client, bucket: bucket}, nil
 }
 
+// S3Client returns the underlying MinIO S3 client (may be nil if not configured).
+func (s *Service) S3Client() *minio.Client {
+	return s.s3
+}
+
 func (s *Service) s3Required() error {
 	if s.s3 == nil {
 		return fmt.Errorf("uploads disabled: S3 not configured")

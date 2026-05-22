@@ -43,6 +43,12 @@ type Config struct {
 	// internal `gw-light` + `media.deezer.com/v1/get_url` APIs (otherwise public
 	// Deezer only exposes 30-second previews).
 	DeezerARL string
+
+	// APNs (Apple Push Notification service) configuration.
+	APNsKeyID    string
+	APNsTeamID   string
+	APNsBundleID string
+	APNsKeyB64   string // Base64-encoded .p8 key file
 }
 
 func Load() (*Config, error) {
@@ -68,6 +74,10 @@ func Load() (*Config, error) {
 		YandexToken:      getEnv("YANDEX_SERVICE_TOKEN", "y0__xCnx4f-Bhje-AYg19WehxcdBrdHfqxPPx2v5vOjqAxuTyubHA"),
 		GeniusToken:      getEnv("GENIUS_TOKEN", "zTGbOmZjiWvldeVVVOMWAmmmAp0Aont38WMELq2DPqpihhThnVnj2o0FsZs9N30m"),
 		DeezerARL:        getEnv("DEEZER_ARL", ""),
+		APNsKeyID:        getEnv("APNS_KEY_ID", ""),
+		APNsTeamID:       getEnv("APNS_TEAM_ID", ""),
+		APNsBundleID:     getEnv("APNS_BUNDLE_ID", ""),
+		APNsKeyB64:       getEnv("APNS_KEY_B64", ""),
 		RecaptchaSecret:  getEnv("RECAPTCHA_SECRET", "6LfytsssAAAAAKgi5g2SL6wU3B6qeUglw9YKJ6J9"),
 		RecaptchaSiteKey: getEnv("RECAPTCHA_SITE_KEY", "6LfytsssAAAAAITYZm3exkx5ODWZ8c8Nd_nysOBj"),
 		ResendAPIKey:     getEnv("RESEND_API_KEY", "re_u4Yu3Sqg_Md9pqwsAV6hufnKA2y73mMue"),

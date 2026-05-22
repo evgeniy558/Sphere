@@ -18,16 +18,20 @@ import (
 	"sphere-backend/internal/chat"
 	"sphere-backend/internal/comments"
 	"sphere-backend/internal/config"
+	"sphere-backend/internal/crossmap"
 	"sphere-backend/internal/db"
 	"sphere-backend/internal/favorites"
 	"sphere-backend/internal/history"
+	"sphere-backend/internal/karaoke"
 	"sphere-backend/internal/listen"
 	"sphere-backend/internal/middleware"
 	"sphere-backend/internal/music"
+	"sphere-backend/internal/notifications"
 	"sphere-backend/internal/playlist"
 	"sphere-backend/internal/preferences"
 	"sphere-backend/internal/provider"
 	"sphere-backend/internal/recommend"
+	"sphere-backend/internal/scheduler"
 	"sphere-backend/internal/social"
 	"sphere-backend/internal/updates"
 	"sphere-backend/internal/uploads"
@@ -123,6 +127,24 @@ func main() {
 	listenH := listen.NewHandler(listenSvc, chatHub.BroadcastJSON)
 	updatesH := updates.NewHandler(pool)
 	adminH := admin.NewHandler(pool)
+
+	// NodeX Karaoke
+	var s3Client = uploadSvc.S3Client()
+	karaokeSvc := karaoke.NewService(pool, s3Client, cfg.S3Bucket, musicSvc)
+	karaokeH := karaoke.NewHandler(karaokeSvc)
+
+	// Cross-provider track mapping
+	crossmapSvc := crossmap.NewService(pool, musicSvc)
+	crossmapH := crossmap.NewHandler(crossmapSvc)
+
+	// Push notifications
+	notifSvc := notifications.NewService(pool, cfg.APNsKeyID, cfg.APNsTeamID, cfg.APNsBundleID, cfg.APNsKeyB64)
+	notifH := notifications.NewHandler(notifSvc)
+
+	// Scheduler (availability guard)
+	sched := scheduler.New(pool, musicSvc, crossmapSvc, notifSvc)
+	sched.Start()
+	defer sched.Stop()
 
 	// Router
 	r := chi.NewRouter()
@@ -236,6 +258,21 @@ func main() {
 		r.Get("/playlists/{provider}/{id}/download-manifest", musicH.PlaylistDownloadManifest)
 		r.Get("/albums/{provider}/{id}/download-manifest", musicH.AlbumDownloadManifest)
 
+		// NodeX Karaoke (vocal removal)
+		r.Post("/tracks/{provider}/{id}/karaoke/prepare", karaokeH.Prepare)
+		r.Get("/tracks/{provider}/{id}/karaoke", karaokeH.Stream)
+
+		// Cross-provider track mapping
+		r.Get("/tracks/{provider}/{id}/alternatives", crossmapH.Alternatives)
+		r.Get("/tracks/{provider}/{id}/best-source", crossmapH.BestSource)
+		r.Post("/tracks/match", crossmapH.BatchMatch)
+		r.Post("/user/track-source", crossmapH.SetPreferred)
+
+		// Push notifications
+		r.Post("/devices", notifH.Register)
+		r.Delete("/devices/{token}", notifH.Unregister)
+		r.Get("/notifications", notifH.History)
+
 		r.Post("/tracks/{provider}/{id}/comments", commentsH.Create)
 		r.Post("/comments/{id}/vote", commentsH.Vote)
 		r.Post("/lyrics", musicH.SubmitLyrics)
@@ -300,6 +337,9 @@ func main() {
 		// Admin: updates management
 		r.With(middleware.AdminOnly(pool)).Post("/admin/updates", updatesH.CreateUpdate)
 		r.With(middleware.AdminOnly(pool)).Get("/admin/updates", updatesH.ListUpdates)
+
+		// Admin: manual availability check
+		r.With(middleware.AdminOnly(pool)).Post("/admin/jobs/check-availability", sched.TriggerAvailability)
 	})
 
 	// Server

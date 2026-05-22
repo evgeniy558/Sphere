@@ -375,4 +375,92 @@ CREATE INDEX IF NOT EXISTS wave_events_user_time_idx ON wave_events(user_id, cre
 
 -- Index for similar users query performance
 CREATE INDEX IF NOT EXISTS listen_history_artist_user_idx ON listen_history(artist, user_id) WHERE artist <> '';
+
+-- =====================================================================
+-- NodeX Karaoke: cached vocal-removed tracks
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS karaoke_cache (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    provider TEXT NOT NULL,
+    track_id TEXT NOT NULL,
+    s3_key TEXT NOT NULL DEFAULT '',
+    file_size BIGINT NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ,
+    error_message TEXT,
+    UNIQUE(provider, track_id)
+);
+CREATE INDEX IF NOT EXISTS karaoke_cache_lookup_idx ON karaoke_cache(provider, track_id);
+
+-- =====================================================================
+-- Cross-provider track mappings (Smart Duplicates)
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS track_mappings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    canonical_hash TEXT NOT NULL,
+    canonical_artist TEXT NOT NULL,
+    canonical_title TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    track_id TEXT NOT NULL,
+    bitrate_kbps INT NOT NULL DEFAULT 0,
+    codec TEXT NOT NULL DEFAULT '',
+    has_full_track BOOLEAN NOT NULL DEFAULT false,
+    duration_seconds INT NOT NULL DEFAULT 0,
+    confidence DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(provider, track_id)
+);
+CREATE INDEX IF NOT EXISTS track_mappings_canonical_idx ON track_mappings(canonical_hash);
+
+CREATE TABLE IF NOT EXISTS user_track_source (
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    canonical_hash TEXT NOT NULL,
+    preferred_provider TEXT NOT NULL,
+    preferred_track_id TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT 'manual',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, canonical_hash)
+);
+
+-- =====================================================================
+-- Push notifications: device tokens + log
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS device_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    platform TEXT NOT NULL CHECK (platform IN ('ios', 'android', 'web')),
+    token TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(user_id, token)
+);
+CREATE INDEX IF NOT EXISTS device_tokens_user_idx ON device_tokens(user_id);
+
+CREATE TABLE IF NOT EXISTS notifications_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    payload JSONB NOT NULL DEFAULT '{}',
+    sent_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS notifications_log_user_idx ON notifications_log(user_id, sent_at DESC);
+
+-- =====================================================================
+-- Track Availability Guard
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS track_availability (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    provider TEXT NOT NULL,
+    track_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'available',
+    last_checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    replacement_provider TEXT,
+    replacement_track_id TEXT,
+    UNIQUE(provider, track_id)
+);
+CREATE INDEX IF NOT EXISTS track_availability_status_idx ON track_availability(status) WHERE status != 'available';
 `

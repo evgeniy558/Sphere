@@ -1,0 +1,10 @@
+# NodeX Wave dependencies
+# Training (local):
+torch>=2.0.0
+numpy>=1.26.0
+pandas>=2.0.0
+psycopg2-binary>=2.9.0
+
+# Inference (server):
+onnxruntime>=1.17.0
+numpy>=1.26.0
