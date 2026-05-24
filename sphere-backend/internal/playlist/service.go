@@ -2,7 +2,9 @@ package playlist
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -405,4 +407,194 @@ func (s *Service) ListMembers(ctx context.Context, playlistID, viewerID string) 
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+// ---------------------------------------------------------------------------
+// Suggestions
+// ---------------------------------------------------------------------------
+
+type Suggestion struct {
+	ID         string    `json:"id"`
+	PlaylistID string    `json:"playlist_id"`
+	UserID     string    `json:"user_id"`
+	Username   string    `json:"username,omitempty"`
+	Provider   string    `json:"provider"`
+	TrackID    string    `json:"track_id"`
+	Title      string    `json:"title"`
+	Artist     string    `json:"artist"`
+	CoverURL   string    `json:"cover_url"`
+	Duration   int       `json:"duration"`
+	Status     string    `json:"status"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+func (s *Service) SuggestTrack(ctx context.Context, playlistID, userID string, t PlaylistTrack) (*Suggestion, error) {
+	allowed, err := s.checkAnyAccess(ctx, playlistID, userID)
+	if err != nil || !allowed {
+		return nil, fmt.Errorf("forbidden")
+	}
+
+	var sg Suggestion
+	err = s.db.QueryRow(ctx,
+		`INSERT INTO playlist_suggestions (playlist_id, user_id, provider, track_id, title, artist, cover_url, duration)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		 RETURNING id, playlist_id, user_id, provider, track_id, title, artist, cover_url, duration, status, created_at`,
+		playlistID, userID, t.Provider, t.TrackID, t.Title, t.Artist, t.CoverURL, t.Duration,
+	).Scan(&sg.ID, &sg.PlaylistID, &sg.UserID, &sg.Provider, &sg.TrackID,
+		&sg.Title, &sg.Artist, &sg.CoverURL, &sg.Duration, &sg.Status, &sg.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("suggest track: %w", err)
+	}
+	s.recordActivity(ctx, playlistID, userID, "suggest_track",
+		map[string]string{"title": t.Title, "artist": t.Artist})
+	return &sg, nil
+}
+
+func (s *Service) ListSuggestions(ctx context.Context, playlistID, viewerID, status string) ([]Suggestion, error) {
+	allowed, err := s.checkAnyAccess(ctx, playlistID, viewerID)
+	if err != nil || !allowed {
+		return nil, fmt.Errorf("forbidden")
+	}
+	query := `SELECT ps.id, ps.playlist_id, ps.user_id, COALESCE(u.username,''), ps.provider, ps.track_id,
+	                 ps.title, ps.artist, ps.cover_url, ps.duration, ps.status, ps.created_at
+	          FROM playlist_suggestions ps JOIN users u ON u.id = ps.user_id
+	          WHERE ps.playlist_id = $1`
+	args := []any{playlistID}
+	if status != "" {
+		query += ` AND ps.status = $2`
+		args = append(args, status)
+	}
+	query += ` ORDER BY ps.created_at DESC`
+	rows, err := s.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Suggestion
+	for rows.Next() {
+		var sg Suggestion
+		if rows.Scan(&sg.ID, &sg.PlaylistID, &sg.UserID, &sg.Username, &sg.Provider, &sg.TrackID,
+			&sg.Title, &sg.Artist, &sg.CoverURL, &sg.Duration, &sg.Status, &sg.CreatedAt) == nil {
+			out = append(out, sg)
+		}
+	}
+	return out, nil
+}
+
+func (s *Service) ApproveSuggestion(ctx context.Context, playlistID, callerID, suggestionID string) error {
+	if err := s.checkEditAccess(ctx, playlistID, callerID); err != nil {
+		return err
+	}
+	var prov, tid, title, artist, cover string
+	var dur int
+	err := s.db.QueryRow(ctx,
+		`UPDATE playlist_suggestions SET status = 'approved', reviewed_by = $3, reviewed_at = now()
+		 WHERE id = $1 AND playlist_id = $2 AND status = 'pending'
+		 RETURNING provider, track_id, title, artist, cover_url, duration`,
+		suggestionID, playlistID, callerID,
+	).Scan(&prov, &tid, &title, &artist, &cover, &dur)
+	if err != nil {
+		return fmt.Errorf("approve: %w", err)
+	}
+	s.recordActivity(ctx, playlistID, callerID, "approve_suggestion",
+		map[string]string{"title": title, "artist": artist})
+	return s.AddTrack(ctx, playlistID, callerID, PlaylistTrack{
+		Provider: prov, TrackID: tid, Title: title, Artist: artist, CoverURL: cover, Duration: dur,
+	})
+}
+
+func (s *Service) RejectSuggestion(ctx context.Context, playlistID, callerID, suggestionID string) error {
+	if err := s.checkEditAccess(ctx, playlistID, callerID); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(ctx,
+		`UPDATE playlist_suggestions SET status = 'rejected', reviewed_by = $3, reviewed_at = now()
+		 WHERE id = $1 AND playlist_id = $2 AND status = 'pending'`,
+		suggestionID, playlistID, callerID)
+	s.recordActivity(ctx, playlistID, callerID, "reject_suggestion", map[string]string{"suggestion_id": suggestionID})
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// Track voting
+// ---------------------------------------------------------------------------
+
+func (s *Service) VoteTrack(ctx context.Context, playlistID, userID, trackDBID string, vote int) error {
+	allowed, err := s.checkAnyAccess(ctx, playlistID, userID)
+	if err != nil || !allowed {
+		return fmt.Errorf("forbidden")
+	}
+	_, err = s.db.Exec(ctx,
+		`INSERT INTO playlist_track_votes (track_db_id, user_id, vote) VALUES ($1, $2, $3)
+		 ON CONFLICT (track_db_id, user_id) DO UPDATE SET vote = $3`,
+		trackDBID, userID, vote)
+	return err
+}
+
+// ---------------------------------------------------------------------------
+// Activity feed
+// ---------------------------------------------------------------------------
+
+type ActivityEntry struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	Username  string    `json:"username"`
+	Avatar    string    `json:"avatar_url"`
+	Action    string    `json:"action"`
+	Metadata  any       `json:"metadata"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (s *Service) ListActivity(ctx context.Context, playlistID, viewerID string, limit int) ([]ActivityEntry, error) {
+	allowed, err := s.checkAnyAccess(ctx, playlistID, viewerID)
+	if err != nil || !allowed {
+		return nil, fmt.Errorf("forbidden")
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.Query(ctx,
+		`SELECT pa.id, pa.user_id, COALESCE(u.username,''), COALESCE(u.avatar_url,''), pa.action, pa.metadata, pa.created_at
+		 FROM playlist_activity pa JOIN users u ON u.id = pa.user_id
+		 WHERE pa.playlist_id = $1 ORDER BY pa.created_at DESC LIMIT $2`,
+		playlistID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ActivityEntry
+	for rows.Next() {
+		var e ActivityEntry
+		var meta []byte
+		if rows.Scan(&e.ID, &e.UserID, &e.Username, &e.Avatar, &e.Action, &meta, &e.CreatedAt) == nil {
+			e.Metadata = json.RawMessage(meta)
+			out = append(out, e)
+		}
+	}
+	return out, nil
+}
+
+func (s *Service) recordActivity(ctx context.Context, playlistID, userID, action string, metadata any) {
+	metaJSON, _ := json.Marshal(metadata)
+	_, _ = s.db.Exec(ctx,
+		`INSERT INTO playlist_activity (playlist_id, user_id, action, metadata) VALUES ($1, $2, $3, $4)`,
+		playlistID, userID, action, metaJSON)
+}
+
+// GetPlaylistMemberIDs returns all user IDs with access (owner + members).
+func (s *Service) GetPlaylistMemberIDs(ctx context.Context, playlistID string) []string {
+	var ownerID string
+	_ = s.db.QueryRow(ctx, `SELECT owner_id FROM user_playlists WHERE id = $1`, playlistID).Scan(&ownerID)
+	ids := []string{ownerID}
+	rows, err := s.db.Query(ctx, `SELECT user_id FROM user_playlist_members WHERE playlist_id = $1`, playlistID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var uid string
+			if rows.Scan(&uid) == nil {
+				ids = append(ids, uid)
+			}
+		}
+	}
+	return ids
 }

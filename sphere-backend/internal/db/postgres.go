@@ -463,4 +463,126 @@ CREATE TABLE IF NOT EXISTS track_availability (
     UNIQUE(provider, track_id)
 );
 CREATE INDEX IF NOT EXISTS track_availability_status_idx ON track_availability(status) WHERE status != 'available';
+
+-- =====================================================================
+-- Blend: auto-generated taste-merged playlists
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS blends (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    creator_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active',
+    last_generated_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS blends_creator_idx ON blends(creator_id);
+
+CREATE TABLE IF NOT EXISTS blend_members (
+    blend_id UUID NOT NULL REFERENCES blends(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending',
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (blend_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS blend_members_user_idx ON blend_members(user_id);
+
+CREATE TABLE IF NOT EXISTS blend_tracks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    blend_id UUID NOT NULL REFERENCES blends(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    track_id TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    artist TEXT NOT NULL DEFAULT '',
+    cover_url TEXT NOT NULL DEFAULT '',
+    duration INT NOT NULL DEFAULT 0,
+    match_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+    match_label TEXT NOT NULL DEFAULT '',
+    position INT NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS blend_tracks_blend_idx ON blend_tracks(blend_id, position);
+
+-- =====================================================================
+-- Jam: real-time group listening with shared queue
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS jam_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    host_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active',
+    current_provider TEXT NOT NULL DEFAULT '',
+    current_track_id TEXT NOT NULL DEFAULT '',
+    current_position DOUBLE PRECISION NOT NULL DEFAULT 0,
+    is_playing BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ended_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS jam_participants (
+    session_id UUID NOT NULL REFERENCES jam_sessions(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (session_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS jam_queue (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id UUID NOT NULL REFERENCES jam_sessions(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    track_id TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    artist TEXT NOT NULL DEFAULT '',
+    cover_url TEXT NOT NULL DEFAULT '',
+    duration INT NOT NULL DEFAULT 0,
+    added_by UUID NOT NULL REFERENCES users(id),
+    position INT NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'queued',
+    upvotes INT NOT NULL DEFAULT 0,
+    downvotes INT NOT NULL DEFAULT 0,
+    added_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS jam_queue_session_idx ON jam_queue(session_id, status, position);
+
+CREATE TABLE IF NOT EXISTS jam_queue_votes (
+    queue_item_id UUID NOT NULL REFERENCES jam_queue(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    vote INT NOT NULL CHECK (vote IN (-1, 1)),
+    PRIMARY KEY (queue_item_id, user_id)
+);
+
+-- =====================================================================
+-- Enhanced playlists: suggestions, votes, activity
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS playlist_suggestions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    playlist_id UUID NOT NULL REFERENCES user_playlists(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    track_id TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    artist TEXT NOT NULL DEFAULT '',
+    cover_url TEXT NOT NULL DEFAULT '',
+    duration INT NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending',
+    reviewed_by UUID REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    reviewed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS playlist_suggestions_idx ON playlist_suggestions(playlist_id, status);
+
+CREATE TABLE IF NOT EXISTS playlist_track_votes (
+    track_db_id UUID NOT NULL REFERENCES user_playlist_tracks(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    vote INT NOT NULL CHECK (vote IN (-1, 1)),
+    PRIMARY KEY (track_db_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS playlist_activity (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    playlist_id UUID NOT NULL REFERENCES user_playlists(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    action TEXT NOT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS playlist_activity_idx ON playlist_activity(playlist_id, created_at DESC);
 `

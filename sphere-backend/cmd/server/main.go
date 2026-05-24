@@ -15,6 +15,7 @@ import (
 
 	"sphere-backend/internal/admin"
 	"sphere-backend/internal/auth"
+	"sphere-backend/internal/blend"
 	"sphere-backend/internal/chat"
 	"sphere-backend/internal/comments"
 	"sphere-backend/internal/config"
@@ -22,6 +23,7 @@ import (
 	"sphere-backend/internal/db"
 	"sphere-backend/internal/favorites"
 	"sphere-backend/internal/history"
+	"sphere-backend/internal/jam"
 	"sphere-backend/internal/karaoke"
 	"sphere-backend/internal/listen"
 	"sphere-backend/internal/middleware"
@@ -120,9 +122,11 @@ func main() {
 	socialH := social.NewHandler(socialSvc, favSvc, historySvc)
 	chatH := chat.NewHandler(chatSvc, chatHub, cfg.JWTSecret)
 	playlistSvc := playlist.NewService(pool)
+	jamSvc := jam.NewService(pool)
 	waveSvc := wave.NewService(pool, historySvc, favSvc, musicSvc, spotifyRef)
 	listenSvc := listen.NewService(pool)
-	playlistH := playlist.NewHandler(playlistSvc)
+	playlistH := playlist.NewHandler(playlistSvc, chatHub.BroadcastJSON)
+	jamH := jam.NewHandler(jamSvc, chatHub.BroadcastJSON)
 	waveH := wave.NewHandler(waveSvc)
 	listenH := listen.NewHandler(listenSvc, chatHub.BroadcastJSON)
 	updatesH := updates.NewHandler(pool)
@@ -133,6 +137,10 @@ func main() {
 	karaokeSvc := karaoke.NewService(pool, s3Client, cfg.S3Bucket, musicSvc)
 	karaokeH := karaoke.NewHandler(karaokeSvc)
 
+	// Blend
+	blendSvc := blend.NewService(pool, historySvc, favSvc, musicSvc, spotifyRef)
+	blendH := blend.NewHandler(blendSvc, chatHub.BroadcastJSON)
+
 	// Cross-provider track mapping
 	crossmapSvc := crossmap.NewService(pool, musicSvc)
 	crossmapH := crossmap.NewHandler(crossmapSvc)
@@ -142,7 +150,7 @@ func main() {
 	notifH := notifications.NewHandler(notifSvc)
 
 	// Scheduler (availability guard)
-	sched := scheduler.New(pool, musicSvc, crossmapSvc, notifSvc)
+	sched := scheduler.New(pool, musicSvc, crossmapSvc, notifSvc, blendSvc)
 	sched.Start()
 	defer sched.Stop()
 
@@ -325,6 +333,38 @@ func main() {
 		r.Post("/playlists/user/{id}/members", playlistH.AddMember)
 		r.Delete("/playlists/user/{id}/members/{userID}", playlistH.RemoveMember)
 		r.Get("/playlists/user/{id}/members", playlistH.ListMembers)
+
+		// Playlist suggestions, votes, activity
+		r.Post("/playlists/user/{id}/suggestions", playlistH.SuggestTrack)
+		r.Get("/playlists/user/{id}/suggestions", playlistH.ListSuggestions)
+		r.Post("/playlists/user/{id}/suggestions/{suggestionID}/approve", playlistH.ApproveSuggestion)
+		r.Post("/playlists/user/{id}/suggestions/{suggestionID}/reject", playlistH.RejectSuggestion)
+		r.Post("/playlists/user/{id}/tracks/{trackID}/vote", playlistH.VoteTrack)
+		r.Get("/playlists/user/{id}/activity", playlistH.ListActivity)
+
+		// Blend (taste-merged playlists)
+		r.Post("/blends", blendH.Create)
+		r.Get("/blends", blendH.ListMine)
+		r.Get("/blends/{id}", blendH.GetByID)
+		r.Delete("/blends/{id}", blendH.Delete)
+		r.Post("/blends/{id}/accept", blendH.AcceptInvite)
+		r.Post("/blends/{id}/decline", blendH.DeclineInvite)
+		r.Post("/blends/{id}/regenerate", blendH.Regenerate)
+
+		// Jam (group listening with queue)
+		r.Post("/jam/sessions", jamH.Create)
+		r.Get("/jam/sessions/{id}", jamH.Get)
+		r.Post("/jam/sessions/{id}/join", jamH.Join)
+		r.Post("/jam/sessions/{id}/leave", jamH.Leave)
+		r.Delete("/jam/sessions/{id}", jamH.End)
+		r.Post("/jam/sessions/{id}/queue", jamH.AddToQueue)
+		r.Delete("/jam/sessions/{id}/queue/{itemID}", jamH.RemoveFromQueue)
+		r.Post("/jam/sessions/{id}/queue/{itemID}/vote", jamH.VoteQueue)
+		r.Get("/jam/sessions/{id}/queue", jamH.GetQueue)
+		r.Post("/jam/sessions/{id}/sync", jamH.Sync)
+		r.Post("/jam/sessions/{id}/next", jamH.PlayNext)
+		r.Post("/jam/sessions/{id}/skip", jamH.Skip)
+		r.Post("/jam/sessions/{id}/invite", jamH.Invite)
 
 		// My Wave
 		r.Post("/wave/start", waveH.StartSession)
