@@ -281,9 +281,10 @@ func (y *YouTube) getStreamViaYtdlp(ctx context.Context, id string) (string, err
 		"--no-warnings", "--no-check-certificates", "--no-playlist",
 		"--no-cache-dir",
 		"--user-agent", ytdlpUserAgent,
-		"--extractor-args", "youtube:player_client=android,web,ios",
-		"--socket-timeout", "15",
-		"--retries", "3",
+		"--extractor-args", "youtube:player_client=web,mweb,android,ios",
+		"--socket-timeout", "20",
+		"--retries", "5",
+		"--fragment-retries", "5",
 		videoURL,
 	}
 	if y.ytdlpCookies != "" {

@@ -54,6 +54,7 @@ func (s *Service) Search(ctx context.Context, query string, limit int, providerF
 		if p, ok := s.providers[providerFilter]; ok {
 			result, err := p.Search(ctx, query, limit)
 			if err != nil {
+				log.Printf("[search] provider=%s q=%q err=%v", providerFilter, query, err)
 				return &model.SearchResult{}
 			}
 			return result
@@ -94,9 +95,13 @@ func (s *Service) GetTrackStreamURL(ctx context.Context, providerName, id string
 	if !ok {
 		return "", fmt.Errorf("unknown provider: %s", providerName)
 	}
-	url, err := p.GetTrackStreamURL(ctx, id)
-	if err == nil && url != "" {
-		return url, nil
+	resolved, err := p.GetTrackStreamURL(ctx, id)
+	if err == nil && resolved != "" {
+		if validateErr := ValidateResolvedStreamURL(resolved); validateErr == nil {
+			return resolved, nil
+		} else {
+			err = validateErr
+		}
 	}
 
 	// Fallback path: provider only ships previews (Deezer / often Spotify) or
@@ -114,7 +119,7 @@ func (s *Service) GetTrackStreamURL(ctx context.Context, providerName, id string
 	}
 
 	// Bound the fallback search so a single slow provider can't stall playback.
-	fbCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	fbCtx, cancel := context.WithTimeout(ctx, 28*time.Second)
 	defer cancel()
 
 	// Order: YouTube first (largest catalogue, full-track audio via yt-dlp),
@@ -134,7 +139,7 @@ func (s *Service) GetTrackStreamURL(ctx context.Context, providerName, id string
 		}
 		for _, t := range sr.Tracks {
 			streamURL, sErr := fp.GetTrackStreamURL(fbCtx, t.ID)
-			if sErr == nil && streamURL != "" {
+			if sErr == nil && streamURL != "" && ValidateResolvedStreamURL(streamURL) == nil {
 				log.Printf("[stream-fallback] resolved provider=%s id=%s via=%s/%s",
 					providerName, id, fallbackName, t.ID)
 				return streamURL, nil
@@ -178,6 +183,24 @@ type artistAlbumsProvider interface {
 }
 
 func (s *Service) GetArtistAlbums(ctx context.Context, providerName, artistID, market string, limit int) ([]model.Album, error) {
+	if providerName == "all" || providerName == "" {
+		sp, ok := s.providers["spotify"]
+		ap, hasAlbums := sp.(artistAlbumsProvider)
+		if ok && hasAlbums {
+			sr, err := sp.Search(ctx, artistID, 8)
+			if err == nil && sr != nil {
+				for _, a := range sr.Artists {
+					if strings.EqualFold(strings.TrimSpace(a.Name), strings.TrimSpace(artistID)) {
+						return ap.GetArtistAlbums(ctx, a.ID, market, limit)
+					}
+				}
+				if len(sr.Artists) > 0 {
+					return ap.GetArtistAlbums(ctx, sr.Artists[0].ID, market, limit)
+				}
+			}
+		}
+		return nil, fmt.Errorf("artist albums not supported for provider: %s", providerName)
+	}
 	p, ok := s.providers[providerName]
 	if !ok {
 		return nil, fmt.Errorf("unknown provider: %s", providerName)

@@ -78,6 +78,10 @@ func (h *Handler) GetTrackStream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusNotFound)
 		return
 	}
+	if vErr := ValidateResolvedStreamURL(streamURL); vErr != nil {
+		http.Error(w, `{"error":"`+vErr.Error()+`"}`, http.StatusNotFound)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"stream_url": streamURL})
@@ -121,23 +125,29 @@ func (h *Handler) ProxyStream(w http.ResponseWriter, r *http.Request) {
 
 	streamURL, err := h.svc.GetTrackStreamURL(r.Context(), prov, id)
 	if err != nil {
+		log.Printf("[proxy-stream] resolve failed %s/%s: %v", prov, id, err)
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusNotFound)
+		return
+	}
+	if vErr := ValidateResolvedStreamURL(streamURL); vErr != nil {
+		log.Printf("[proxy-stream] invalid url %s/%s: %v url=%s", prov, id, vErr, streamURL[:min(len(streamURL), 120)])
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, vErr.Error()), http.StatusNotFound)
 		return
 	}
 
 	log.Printf("[proxy-stream] %s/%s → %s", prov, id, streamURL[:min(len(streamURL), 120)])
 
-	if prov == "youtube" {
-		h.proxyUpstream(w, r, streamURL)
+	lower := strings.ToLower(streamURL)
+	// HLS playlists must be fetched by AVPlayer directly (segment URLs are relative).
+	if strings.Contains(lower, ".m3u8") || strings.Contains(lower, "mpegurl") {
+		http.Redirect(w, r, streamURL, http.StatusTemporaryRedirect)
 		return
 	}
 
-	// SoundCloud (and others with a direct CDN URL): 302 so AVPlayer buffers from origin
-	// instead of a byte-streaming proxy (fixes choppy playback on Simulator / some networks).
-	http.Redirect(w, r, streamURL, http.StatusTemporaryRedirect)
+	// Progressive audio: proxy bytes so iOS AVPlayer never follows redirects without auth headers.
+	h.proxyUpstream(w, r, streamURL)
 }
 
-// proxySpotify streams a full-length Spotify track as decrypted OGG bytes.\n+// Returns true when the response was handled (success or definitive error).\n+func (h *Handler) proxySpotify(w http.ResponseWriter, r *http.Request, sp *provider.Spotify, trackID, quality string) bool {\n+\t// ladder in kbps\n+\tvar ladder []int\n+\tswitch quality {\n+\tcase \"high\", \"320\", \"ogg_320\":\n+\t\tladder = []int{320, 160, 96}\n+\tcase \"low\", \"96\", \"ogg_96\":\n+\t\tladder = []int{96}\n+\tdefault:\n+\t\tladder = []int{160, 320, 96}\n+\t}\n+\n+\tsess := sp.FullTrackSession()\n+\tif sess == nil {\n+\t\treturn false\n+\t}\n+\n+\tvar (\n+\t\treader io.ReadCloser\n+\t\tsize   int64\n+\t\tfmtStr string\n+\t\tlastErr error\n+\t)\n+\tfor _, br := range ladder {\n+\t\trc, sz, format, err := sess.ResolveDecryptedStream(r.Context(), trackID, br)\n+\t\tif err == nil && rc != nil {\n+\t\t\treader = rc\n+\t\t\tsize = sz\n+\t\t\tswitch format {\n+\t\t\tcase 0:\n+\t\t\t\tfmtStr = \"unknown\"\n+\t\t\tdefault:\n+\t\t\t\tfmtStr = format.String()\n+\t\t\t}\n+\t\t\tbreak\n+\t\t}\n+\t\tlastErr = err\n+\t}\n+\tif reader == nil {\n+\t\tlog.Printf(\"[spotify-stream] resolve %s ladder=%v failed: %v — falling back\", trackID, ladder, lastErr)\n+\t\treturn false\n+\t}\n+\tdefer reader.Close()\n+\n+\tw.Header().Set(\"Content-Type\", \"audio/ogg\")\n+\tw.Header().Set(\"Cache-Control\", \"private, max-age=3600\")\n+\tw.Header().Set(\"X-Sphere-Audio-Quality\", fmtStr)\n+\tif size > 0 {\n+\t\tw.Header().Set(\"Content-Length\", strconv.FormatInt(size, 10))\n+\t}\n+\tw.WriteHeader(http.StatusOK)\n+\tlog.Printf(\"[spotify-stream] %s ok format=%s size=%d requested=%q\", trackID, fmtStr, size, quality)\n+\n+\t_, _ = io.Copy(w, reader)\n+\treturn true\n+}\n+\n*** End Patch"}"}}
 // proxySpotify streams a full-length Spotify track as decrypted OGG bytes.
 // Returns true when the response was handled (success or definitive error).
 func (h *Handler) proxySpotify(w http.ResponseWriter, r *http.Request, sp *provider.Spotify, trackID, quality string) bool {
@@ -300,18 +310,18 @@ func (h *Handler) proxyDeezer(w http.ResponseWriter, r *http.Request, dz *provid
 }
 
 func (h *Handler) proxyUpstream(w http.ResponseWriter, r *http.Request, streamURL string) {
-	transport := &http.Transport{ResponseHeaderTimeout: 15 * time.Second}
+	if vErr := ValidateResolvedStreamURL(streamURL); vErr != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, vErr.Error()), http.StatusBadGateway)
+		return
+	}
+
+	transport := &http.Transport{ResponseHeaderTimeout: 20 * time.Second}
 	client := &http.Client{Transport: transport}
-	req, err := http.NewRequestWithContext(r.Context(), "GET", streamURL, nil)
+	req, err := UpstreamRequestForStream(r.Context(), streamURL, r.Header.Get("Range"))
 	if err != nil {
 		http.Error(w, `{"error":"failed to create request"}`, http.StatusInternalServerError)
 		return
 	}
-
-	if rng := r.Header.Get("Range"); rng != "" {
-		req.Header.Set("Range", rng)
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -321,8 +331,15 @@ func (h *Handler) proxyUpstream(w http.ResponseWriter, r *http.Request, streamUR
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode/100 != 2 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		log.Printf("[proxy-stream] upstream %s status=%d body=%q", streamURL[:min(len(streamURL), 80)], resp.StatusCode, strings.TrimSpace(string(body)))
+		http.Error(w, fmt.Sprintf(`{"error":"upstream returned HTTP %d"}`, resp.StatusCode), http.StatusBadGateway)
+		return
+	}
+
 	ct := resp.Header.Get("Content-Type")
-	if ct == "" {
+	if ct == "" || strings.Contains(strings.ToLower(ct), "text/html") {
 		ct = "audio/mpeg"
 	}
 	w.Header().Set("Content-Type", ct)
@@ -333,7 +350,7 @@ func (h *Handler) proxyUpstream(w http.ResponseWriter, r *http.Request, streamUR
 		w.Header().Set("Content-Range", cr)
 	}
 	w.Header().Set("Accept-Ranges", "bytes")
-	w.WriteHeader(resp.StatusCode)
+	w.WriteHeader(http.StatusOK)
 	if f, ok := w.(http.Flusher); ok {
 		buf := make([]byte, 32*1024)
 		for {
