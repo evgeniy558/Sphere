@@ -75,11 +75,6 @@ func main() {
 	}
 
 	// Providers
-	// VK and Yandex are intentionally disabled:
-	//   - VK service-tokens don't grant the audio scope; the API returns a
-	//     "Аудио доступно на vk.com" stub instead of real tracks.
-	//   - Yandex Music geoblocks non-RU IPs (HTTP 451), so Render workers
-	//     in the US/EU can never reach it.
 	var spotifyRef *provider.Spotify
 	var providers []provider.MusicProvider
 	if cfg.SpotifyClientID != "" {
@@ -92,7 +87,39 @@ func main() {
 		providers = append(providers, provider.NewSoundCloud(cfg.SoundCloudID, cfg.SoundCloudSecret))
 	}
 	providers = append(providers, provider.NewDeezerWithARL(cfg.GeniusToken, cfg.DeezerARL))
+	if cfg.YandexToken != "" {
+		providers = append(providers, provider.NewYandexWithOptions(cfg.YandexToken, cfg.YandexSignKey, cfg.YandexProxyURL))
+		log.Printf("music provider: yandex enabled (proxy=%v)", cfg.YandexProxyURL != "")
+	}
+	vkToken := cfg.VKAccessToken
+	if vkToken == "" {
+		vkToken = cfg.VKToken
+	}
+	if vkToken != "" {
+		providers = append(providers, provider.NewVKMusic(vkToken))
+		if cfg.VKAccessToken == "" {
+			log.Printf("music provider: vk enabled with service token — stream URLs need VK_ACCESS_TOKEN (user OAuth, audio scope)")
+		} else {
+			log.Printf("music provider: vk enabled")
+		}
+	}
 	musicSvc := music.NewService(providers...)
+	if cfg.SoundCloudSecret == "" {
+		log.Printf("[config] WARN SOUNDCLOUD_CLIENT_SECRET is empty — SoundCloud API may return 401/timeouts")
+	}
+	if cfg.DeezerARL == "" {
+		log.Printf("[config] DEEZER_ARL is empty — Deezer plays 30s previews; full tracks use Spotify/SC/YT fallback")
+	} else {
+		log.Printf("[config] Deezer full-track session enabled (ARL set)")
+	}
+	if cfg.SpotifyCredsBlob != "" || (cfg.SpotifyUsername != "" && cfg.SpotifyPassword != "") {
+		log.Printf("[config] Spotify Connect streaming enabled")
+	} else {
+		log.Printf("[config] WARN SPOTIFY_CREDS_BLOB unset — no full-length Spotify proxy")
+	}
+	if strings.TrimSpace(os.Getenv("YTDLP_COOKIES")) == "" && strings.TrimSpace(os.Getenv("YTDLP_COOKIES_B64")) == "" {
+		log.Printf("[config] WARN YTDLP_COOKIES* unset — YouTube extraction may fail on Render (bot/OOM)")
+	}
 	music.SetGeniusToken(cfg.GeniusToken)
 	prefsSvc := preferences.NewService(pool)
 	recommendSvc := recommend.NewService(pool, historySvc, musicSvc, prefsSvc, favSvc, spotifyRef)
@@ -210,6 +237,7 @@ func main() {
 	r.Get("/lyrics", musicH.GetLyricsByName)
 	r.Get("/artists/{provider}/{id}", musicH.GetArtist)
 	r.Get("/artists/{provider}/{id}/albums", musicH.GetArtistAlbums)
+	r.Get("/artists/{provider}/{id}/fans-also-like", musicH.FansAlsoLike)
 	r.Get("/artists/unified/{name}", musicH.GetUnifiedArtist)
 	r.Get("/albums/{provider}/{id}", musicH.GetAlbum)
 	r.Get("/playlists/{provider}/{id}", musicH.GetPlaylist)

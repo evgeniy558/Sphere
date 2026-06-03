@@ -1,6 +1,7 @@
 package music
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -102,31 +103,35 @@ func (h *Handler) ProxyStream(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	quality := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("quality")))
 
-	// Spotify special-case: full-track audio requires Connect credentials and
-	// returns OGG that must be proxied (expiring CDN URLs + AES-CTR decrypt).
-	if prov == "spotify" {
-		if sp := h.svc.SpotifyProvider(); sp != nil && sp.HasFullTrackSession() {
-			if h.proxySpotify(w, r, sp, id, quality) {
-				return
-			}
-		}
-	}
+	// Allow up to ~50s for yt-dlp / cross-provider fallback on small Render instances.
+	resolveCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 50*time.Second)
+	defer cancel()
 
-	// Deezer special-case: full-track audio comes back encrypted with
-	// BF_CBC_STRIPE, so we MUST proxy + decrypt server-side. Falls through to
-	// the normal stream resolver below if the ARL is not configured.
-	if prov == "deezer" {
-		if dz := h.svc.DeezerProvider(); dz != nil && dz.HasFullTrackSession() {
-			if h.proxyDeezer(w, r, dz, id, quality) {
-				return
-			}
-		}
-	}
-
-	streamURL, err := h.svc.GetTrackStreamURL(r.Context(), prov, id)
+	target, err := h.svc.ResolvePlayback(resolveCtx, prov, id)
 	if err != nil {
 		log.Printf("[proxy-stream] resolve failed %s/%s: %v", prov, id, err)
 		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusNotFound)
+		return
+	}
+
+	if target.ProxyProvider == "spotify" {
+		if sp := h.svc.SpotifyProvider(); sp != nil && sp.HasFullTrackSession() {
+			if h.proxySpotify(w, r, sp, target.ProxyID, quality) {
+				return
+			}
+		}
+	}
+	if target.ProxyProvider == "deezer" {
+		if dz := h.svc.DeezerProvider(); dz != nil && dz.HasFullTrackSession() {
+			if h.proxyDeezer(w, r, dz, target.ProxyID, quality) {
+				return
+			}
+		}
+	}
+
+	streamURL := target.DirectURL
+	if streamURL == "" {
+		http.Error(w, `{"error":"no stream url resolved"}`, http.StatusNotFound)
 		return
 	}
 	if vErr := ValidateResolvedStreamURL(streamURL); vErr != nil {
@@ -135,7 +140,7 @@ func (h *Handler) ProxyStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[proxy-stream] %s/%s → %s", prov, id, streamURL[:min(len(streamURL), 120)])
+	log.Printf("[proxy-stream] %s/%s → %s (via %s/%s)", prov, id, streamURL[:min(len(streamURL), 120)], target.ProxyProvider, target.ProxyID)
 
 	lower := strings.ToLower(streamURL)
 	// HLS playlists must be fetched by AVPlayer directly (segment URLs are relative).

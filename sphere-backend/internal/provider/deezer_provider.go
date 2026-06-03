@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"sphere-backend/internal/model"
@@ -103,7 +104,13 @@ func (d *Deezer) GetTrack(ctx context.Context, id string) (*model.Track, error) 
 // return an error and let the music service fall back to YouTube/SoundCloud.
 func (d *Deezer) GetTrackStreamURL(ctx context.Context, id string) (string, error) {
 	if d.session == nil {
-		return "", fmt.Errorf("deezer: DEEZER_ARL not configured (full track unavailable; using fallback)")
+		track, err := d.GetTrack(ctx, id)
+		if err == nil && track != nil {
+			if preview := strings.TrimSpace(track.PreviewURL); preview != "" {
+				return preview, nil
+			}
+		}
+		return "", fmt.Errorf("deezer: DEEZER_ARL not configured (preview unavailable)")
 	}
 	encryptedURL, _, err := d.session.ResolveStreamURL(ctx, id, "MP3_128")
 	if err != nil {

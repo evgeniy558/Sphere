@@ -41,7 +41,7 @@ type YouTube struct {
 }
 
 // Limit concurrent yt-dlp runs to avoid OOM kills on small Render instances.
-var ytdlpSem = make(chan struct{}, 2)
+var ytdlpSem = make(chan struct{}, 1)
 
 func NewYouTube(geniusToken string) *YouTube {
 	path, _ := exec.LookPath("yt-dlp")

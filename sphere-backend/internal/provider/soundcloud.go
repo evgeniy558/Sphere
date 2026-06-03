@@ -28,7 +28,7 @@ func NewSoundCloud(clientID, clientSecret string) *SoundCloud {
 	return &SoundCloud{
 		clientID:     clientID,
 		clientSecret: clientSecret,
-		httpClient:   &http.Client{Timeout: 25 * time.Second},
+		httpClient:   &http.Client{Timeout: 22 * time.Second},
 	}
 }
 
