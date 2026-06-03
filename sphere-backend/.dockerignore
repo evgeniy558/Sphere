@@ -1,0 +1,9 @@
+.env
+.env.*
+**/.venv
+**/__pycache__
+**/*.pyc
+scripts/nodex/.venv
+scripts/nodex/**/checkpoints
+.git
+*.md
