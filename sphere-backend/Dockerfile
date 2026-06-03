@@ -15,6 +15,6 @@ RUN apk add --no-cache ca-certificates ffmpeg python3 py3-pip \
 
 COPY --from=builder /sphere /sphere
 COPY scripts/nodex/vocal/ /app/scripts/nodex/vocal/
-COPY models/ /models/
+RUN mkdir -p /models
 EXPOSE 8080
 CMD ["/sphere"]
