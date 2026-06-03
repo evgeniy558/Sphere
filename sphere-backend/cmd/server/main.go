@@ -85,6 +85,8 @@ func main() {
 	providers = append(providers, provider.NewYouTube(cfg.GeniusToken))
 	if cfg.SoundCloudID != "" {
 		providers = append(providers, provider.NewSoundCloud(cfg.SoundCloudID, cfg.SoundCloudSecret))
+	} else if cfg.SoundCloudSecret != "" {
+		log.Printf("[config] WARN SOUNDCLOUD_CLIENT_ID is empty but secret is set — set both from the same SoundCloud app")
 	}
 	providers = append(providers, provider.NewDeezerWithARL(cfg.GeniusToken, cfg.DeezerARL))
 	if cfg.YandexToken != "" {

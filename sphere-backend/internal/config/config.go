@@ -35,8 +35,13 @@ type Config struct {
 	SpotifyCredsBlob string
 	SoundCloudID     string
 	SoundCloudSecret string
+	// VKAccessToken is a user OAuth token (vk1.a.*) with the audio scope — required for stream URLs.
+	VKAccessToken string
+	// VKToken is an optional service token (search/metadata only; no audio streams).
 	VKToken          string
 	YandexToken      string
+	YandexSignKey    string
+	YandexProxyURL   string
 	GeniusToken      string
 	// DeezerARL is a long-lived `arl` cookie from a logged-in deezer.com session.
 	// When present, the Deezer provider unlocks full-track streaming via Deezer's
@@ -63,15 +68,19 @@ func Load() (*Config, error) {
 		S3AccessKey:      getEnv("S3_ACCESS_KEY", ""),
 		S3SecretKey:      getEnv("S3_SECRET_KEY", ""),
 		S3Bucket:         getEnv("S3_BUCKET", "sphere-uploads"),
-		SpotifyClientID:  getEnv("SPOTIFY_CLIENT_ID", "57bb83e1ba584118ab3b8970e817dee4"),
-		SpotifySecret:    getEnv("SPOTIFY_CLIENT_SECRET", "7073d08c99a34fc1abe3bcb5b2c08c1f"),
+		// Do not hardcode provider secrets — wrong defaults caused SoundCloud keys to be used for Spotify (403).
+		SpotifyClientID:  getEnv("SPOTIFY_CLIENT_ID", ""),
+		SpotifySecret:    getEnv("SPOTIFY_CLIENT_SECRET", ""),
 		SpotifyUsername:  getEnv("SPOTIFY_USERNAME", ""),
 		SpotifyPassword:  getEnv("SPOTIFY_PASSWORD", ""),
 		SpotifyCredsBlob: getEnv("SPOTIFY_CREDS_BLOB", ""),
-		SoundCloudID:     getEnv("SOUNDCLOUD_CLIENT_ID", "iuspDvaXDbD3AnFwLWK56Fk69q56xsKu"),
+		SoundCloudID:     getEnv("SOUNDCLOUD_CLIENT_ID", ""),
 		SoundCloudSecret: getEnv("SOUNDCLOUD_CLIENT_SECRET", ""),
-		VKToken:          getEnv("VK_SERVICE_TOKEN", "vk1.a.lm-8un_JtuwYfdPCboRYr_ZNPTisJlaSDrM4bDy_BAB_x_e5B8ytHmJxslmsTro0fgcz3DaiWOz_WzjlTAEdY0cwh2G4ybY9pda1-MDYEPzvu2XWUAqOR7vWwM7cFPGb7oCbSr-0jJih5Jx2BJQilc5yrEy5MuHcqNvdMo9TZMh_R0e9W7k60IQP-Cl2g9dIJHTJjvY69hox6lqx8_7nYg"),
-		YandexToken:      getEnv("YANDEX_SERVICE_TOKEN", "y0__xCnx4f-Bhje-AYg19WehxcdBrdHfqxPPx2v5vOjqAxuTyubHA"),
+		VKAccessToken:    getEnv("VK_ACCESS_TOKEN", ""),
+		VKToken:          getEnv("VK_SERVICE_TOKEN", ""),
+		YandexToken:      getEnv("YANDEX_SERVICE_TOKEN", ""),
+		YandexSignKey:    getEnv("YANDEX_SIGN_KEY", ""),
+		YandexProxyURL:   getEnv("YANDEX_HTTP_PROXY", ""),
 		GeniusToken:      getEnv("GENIUS_TOKEN", "zTGbOmZjiWvldeVVVOMWAmmmAp0Aont38WMELq2DPqpihhThnVnj2o0FsZs9N30m"),
 		DeezerARL:        getEnv("DEEZER_ARL", ""),
 		APNsKeyID:        getEnv("APNS_KEY_ID", ""),
