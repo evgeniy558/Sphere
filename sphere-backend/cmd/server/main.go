@@ -106,6 +106,19 @@ func main() {
 	musicSvc := music.NewService(providers...)
 	if cfg.SoundCloudSecret == "" {
 		log.Printf("[config] WARN SOUNDCLOUD_CLIENT_SECRET is empty — SoundCloud API may return 401/timeouts")
+	} else {
+		log.Printf("[config] SoundCloud OAuth configured (client_id len=%d)", len(cfg.SoundCloudID))
+		go func() {
+			probeCtx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+			defer cancel()
+			if sc := musicSvc.SoundCloudProvider(); sc != nil {
+				if _, err := sc.Search(probeCtx, "sphere", 1); err != nil {
+					log.Printf("[config] WARN SoundCloud probe search failed: %v", err)
+				} else {
+					log.Printf("[config] SoundCloud probe search OK")
+				}
+			}
+		}()
 	}
 	if cfg.DeezerARL == "" {
 		log.Printf("[config] DEEZER_ARL is empty — Deezer plays 30s previews; full tracks use Spotify/SC/YT fallback")

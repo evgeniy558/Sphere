@@ -80,6 +80,22 @@ func (s *Service) ResolvePlayback(ctx context.Context, providerName, id string) 
 
 	log.Printf("[playback] fallback %s/%s query=%q", providerName, id, query)
 
+	// SoundCloud before Spotify/YouTube when OAuth is configured (Render-friendly).
+	if sc := s.SoundCloudProvider(); sc != nil && sc.HasOAuth() && providerName != "soundcloud" {
+		scCtx, cancel := context.WithTimeout(ctx, 18*time.Second)
+		fbID := s.searchFirstTrackID(scCtx, "soundcloud", query)
+		cancel()
+		if fbID != "" {
+			if streamURL, err := sc.GetTrackStreamURL(ctx, fbID); err == nil && streamURL != "" && ValidateResolvedStreamURL(streamURL) == nil {
+				log.Printf("[playback] %s/%s → soundcloud/%s (cdn)", providerName, id, fbID)
+				target.ProxyProvider = "soundcloud"
+				target.ProxyID = fbID
+				target.DirectURL = streamURL
+				return target, nil
+			}
+		}
+	}
+
 	if sp := s.SpotifyProvider(); sp != nil && sp.HasFullTrackSession() {
 		spCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		fbID := s.searchFirstTrackID(spCtx, "spotify", query)

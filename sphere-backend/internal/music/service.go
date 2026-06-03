@@ -48,6 +48,16 @@ func (s *Service) SpotifyProvider() *provider.Spotify {
 	return nil
 }
 
+// SoundCloudProvider returns the SoundCloud provider when registered.
+func (s *Service) SoundCloudProvider() *provider.SoundCloud {
+	if p, ok := s.providers["soundcloud"]; ok {
+		if sc, ok := p.(*provider.SoundCloud); ok {
+			return sc
+		}
+	}
+	return nil
+}
+
 func (s *Service) Search(ctx context.Context, query string, limit int, providerFilter string) *model.SearchResult {
 	if providerFilter != "" && providerFilter != "all" {
 		if p, ok := s.providers[providerFilter]; ok {

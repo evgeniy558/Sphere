@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	scapi "sphere-backend/internal/soundcloud"
 	"sphere-backend/internal/model"
 )
 
@@ -18,6 +19,7 @@ type SoundCloud struct {
 	clientID     string
 	clientSecret string
 	httpClient   *http.Client
+	resolver     *scapi.ClientIDResolver
 
 	mu          sync.Mutex
 	accessToken string
@@ -28,11 +30,14 @@ func NewSoundCloud(clientID, clientSecret string) *SoundCloud {
 	return &SoundCloud{
 		clientID:     clientID,
 		clientSecret: clientSecret,
-		httpClient:   &http.Client{Timeout: 22 * time.Second},
+		httpClient:   scapi.DefaultHTTPClient(),
+		resolver:     scapi.NewClientIDResolver(clientID),
 	}
 }
 
 func (s *SoundCloud) Name() string { return "soundcloud" }
+
+func (s *SoundCloud) HasOAuth() bool { return strings.TrimSpace(s.clientSecret) != "" }
 
 func (s *SoundCloud) ensureAccessToken(ctx context.Context) error {
 	s.mu.Lock()
@@ -55,7 +60,8 @@ func (s *SoundCloud) ensureAccessToken(ctx context.Context) error {
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
-	resp, err := s.httpClient.Do(req)
+	scapi.BrowserHeaders(req)
+	resp, err := scapi.DoWithRetry(s.httpClient, req, 3)
 	if err != nil {
 		return err
 	}
@@ -86,35 +92,45 @@ func (s *SoundCloud) apiGet(ctx context.Context, path string) (*http.Response, e
 	if err := s.ensureAccessToken(ctx); err != nil {
 		return nil, err
 	}
+	cid := s.resolver.Get(ctx, false)
+	if cid == "" {
+		return nil, fmt.Errorf("soundcloud: no client_id")
+	}
 	sep := "?"
 	if len(path) > 0 && containsQuery(path) {
 		sep = "&"
 	}
-	u := "https://api-v2.soundcloud.com" + path + sep + "client_id=" + url.QueryEscape(s.clientID)
+	u := "https://api-v2.soundcloud.com" + path + sep + "client_id=" + url.QueryEscape(cid)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Accept", "application/json")
+	scapi.BrowserHeaders(req)
 	s.mu.Lock()
 	tok := s.accessToken
 	s.mu.Unlock()
 	if tok != "" {
 		req.Header.Set("Authorization", "OAuth "+tok)
 	}
-	resp, err := s.httpClient.Do(req)
+	resp, err := scapi.DoWithRetry(s.httpClient, req, 3)
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode == http.StatusUnauthorized && s.clientSecret != "" {
+	if resp.StatusCode == http.StatusUnauthorized {
 		resp.Body.Close()
 		s.mu.Lock()
 		s.accessToken = ""
 		s.mu.Unlock()
+		s.resolver.Get(ctx, true)
 		if err := s.ensureAccessToken(ctx); err != nil {
 			return nil, err
 		}
 		return s.apiGet(ctx, path)
+	}
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		resp.Body.Close()
+		return nil, fmt.Errorf("soundcloud api %s status %d: %s", path, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	return resp, nil
 }
@@ -172,29 +188,35 @@ func (s *SoundCloud) GetTrackStreamURL(ctx context.Context, id string) (string, 
 	if err != nil {
 		return "", err
 	}
-	if t.StreamURL == "" {
+	streamURL := t.StreamURL
+	if streamURL == "" {
 		return "", fmt.Errorf("no stream available")
 	}
+	cid := s.resolver.Get(ctx, false)
 	sep := "?"
-	if containsQuery(t.StreamURL) {
+	if containsQuery(streamURL) {
 		sep = "&"
 	}
-	resolveURL := t.StreamURL + sep + "client_id=" + url.QueryEscape(s.clientID)
+	resolveURL := streamURL + sep + "client_id=" + url.QueryEscape(cid)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, resolveURL, nil)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Accept", "application/json")
+	scapi.BrowserHeaders(req)
 	s.mu.Lock()
 	if tok := s.accessToken; tok != "" {
 		req.Header.Set("Authorization", "OAuth "+tok)
 	}
 	s.mu.Unlock()
-	resp, err := s.httpClient.Do(req)
+	resp, err := scapi.DoWithRetry(s.httpClient, req, 3)
 	if err != nil {
 		return "", fmt.Errorf("resolve stream: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		return "", fmt.Errorf("resolve stream status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
 	var result struct {
 		URL string `json:"url"`
 	}
@@ -311,15 +333,12 @@ func (t scTrack) toTrack() model.Track {
 	if streamURL == "" && len(t.Media.Transcodings) > 0 {
 		streamURL = t.Media.Transcodings[0].URL
 	}
-	// Do not fall back to uploader avatar — many tracks would share one image.
 	cover := soundCloudArtworkURL(t.ArtworkURL)
-	// StreamURL in API payloads must be a resolved CDN URL from GetTrackStreamURL.
-	// The transcoding resolver endpoint is not playable by AVPlayer.
-	_ = streamURL
 	return model.Track{
 		ID: fmt.Sprint(t.ID), Provider: "soundcloud", Title: t.Title,
 		Artist: t.User.Username, CoverURL: cover,
 		Duration: t.Duration / 1000,
+		StreamURL: streamURL,
 	}
 }
 
