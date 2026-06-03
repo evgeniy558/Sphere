@@ -6,7 +6,6 @@ import (
 	"log"
 	"strings"
 	"sync"
-	"time"
 
 	"sphere-backend/internal/model"
 	"sphere-backend/internal/provider"
@@ -104,11 +103,6 @@ func (s *Service) GetTrackStreamURL(ctx context.Context, providerName, id string
 		}
 	}
 
-	// Fallback path: provider only ships previews (Deezer / often Spotify) or
-	// stream resolution failed. Match by artist+title on YouTube/SoundCloud
-	// and stream from there.
-	log.Printf("[stream-fallback] provider=%s id=%s reason=%v", providerName, id, err)
-
 	track, tErr := p.GetTrack(ctx, id)
 	if tErr != nil || track == nil {
 		return "", err
@@ -117,37 +111,7 @@ func (s *Service) GetTrackStreamURL(ctx context.Context, providerName, id string
 	if query == "" {
 		return "", err
 	}
-
-	// Bound the fallback search so a single slow provider can't stall playback.
-	fbCtx, cancel := context.WithTimeout(ctx, 28*time.Second)
-	defer cancel()
-
-	// Order: YouTube first (largest catalogue, full-track audio via yt-dlp),
-	// then SoundCloud (often broken originals or DJ rips) as a last resort.
-	for _, fallbackName := range []string{"youtube", "soundcloud"} {
-		if fallbackName == providerName {
-			continue
-		}
-		fp, ok := s.providers[fallbackName]
-		if !ok {
-			continue
-		}
-		sr, sErr := fp.Search(fbCtx, query, 3)
-		if sErr != nil || sr == nil || len(sr.Tracks) == 0 {
-			log.Printf("[stream-fallback] %s search miss for %q: %v", fallbackName, query, sErr)
-			continue
-		}
-		for _, t := range sr.Tracks {
-			streamURL, sErr := fp.GetTrackStreamURL(fbCtx, t.ID)
-			if sErr == nil && streamURL != "" && ValidateResolvedStreamURL(streamURL) == nil {
-				log.Printf("[stream-fallback] resolved provider=%s id=%s via=%s/%s",
-					providerName, id, fallbackName, t.ID)
-				return streamURL, nil
-			}
-		}
-	}
-	log.Printf("[stream-fallback] exhausted provider=%s id=%s query=%q", providerName, id, query)
-	return "", err
+	return s.crossProviderStreamFallback(ctx, providerName, id, query, err)
 }
 
 func (s *Service) GetLyrics(ctx context.Context, providerName, id string) (*model.Lyrics, error) {

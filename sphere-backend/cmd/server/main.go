@@ -112,10 +112,10 @@ func main() {
 	} else {
 		log.Printf("[config] Deezer full-track session enabled (ARL set)")
 	}
-	if cfg.SpotifyCredsBlob != "" || (cfg.SpotifyUsername != "" && cfg.SpotifyPassword != "") {
-		log.Printf("[config] Spotify Connect streaming enabled")
+	if sp := musicSvc.SpotifyProvider(); sp != nil && sp.HasFullTrackSession() {
+		log.Printf("[config] Spotify Connect configured (full-track /audio proxy for Deezer catalog)")
 	} else {
-		log.Printf("[config] WARN SPOTIFY_CREDS_BLOB unset — no full-length Spotify proxy")
+		log.Printf("[config] WARN SPOTIFY_CREDS_BLOB unset — Deezer tracks cannot use Spotify fallback")
 	}
 	if strings.TrimSpace(os.Getenv("YTDLP_COOKIES")) == "" && strings.TrimSpace(os.Getenv("YTDLP_COOKIES_B64")) == "" {
 		log.Printf("[config] WARN YTDLP_COOKIES* unset — YouTube extraction may fail on Render (bot/OOM)")
