@@ -20,3 +20,7 @@
 # Local Postgres scratch data (used for `make local-pg`-style dev runs)
 /.local_pg.log
 /.local_pgdata/
+
+# Trained NodeX checkpoints (large binaries, not to be committed)
+/scripts/nodex/**/checkpoints/
+/scripts/nodex/.venv/

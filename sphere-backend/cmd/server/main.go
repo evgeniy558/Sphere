@@ -21,6 +21,7 @@ import (
 	"sphere-backend/internal/config"
 	"sphere-backend/internal/crossmap"
 	"sphere-backend/internal/db"
+	"sphere-backend/internal/discover"
 	"sphere-backend/internal/favorites"
 	"sphere-backend/internal/history"
 	"sphere-backend/internal/jam"
@@ -35,6 +36,7 @@ import (
 	"sphere-backend/internal/recommend"
 	"sphere-backend/internal/scheduler"
 	"sphere-backend/internal/social"
+	"sphere-backend/internal/studio"
 	"sphere-backend/internal/updates"
 	"sphere-backend/internal/uploads"
 	"sphere-backend/internal/user"
@@ -167,9 +169,13 @@ func main() {
 	jamSvc := jam.NewService(pool)
 	waveSvc := wave.NewService(pool, historySvc, favSvc, musicSvc, spotifyRef)
 	listenSvc := listen.NewService(pool)
+	discoverSvc := discover.NewService(recommendSvc, historySvc, favSvc)
+	studioSvc := studio.NewService(pool, historySvc, favSvc)
 	playlistH := playlist.NewHandler(playlistSvc, chatHub.BroadcastJSON)
 	jamH := jam.NewHandler(jamSvc, chatHub.BroadcastJSON)
 	waveH := wave.NewHandler(waveSvc)
+	discoverH := discover.NewHandler(discoverSvc)
+	studioH := studio.NewHandler(studioSvc)
 	listenH := listen.NewHandler(listenSvc, chatHub.BroadcastJSON)
 	updatesH := updates.NewHandler(pool)
 	adminH := admin.NewHandler(pool)
@@ -416,6 +422,13 @@ func main() {
 		r.Get("/wave/profile", waveH.GetProfile)
 		r.Get("/wave/offline-package", waveH.GetOfflinePackage)
 		r.Post("/wave/sync", waveH.SyncOfflineEvents)
+
+		// Discover swipe deck (iOS "Find something new")
+		r.Get("/discover/feed", discoverH.Feed)
+		r.Post("/discover/feedback", discoverH.Feedback)
+
+		// Node Studio dashboard
+		r.Get("/studio/summary", studioH.GetSummary)
 
 		// Admin: updates management
 		r.With(middleware.AdminOnly(pool)).Post("/admin/updates", updatesH.CreateUpdate)
