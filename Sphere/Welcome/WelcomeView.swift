@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 
 struct WelcomeView: View {
@@ -5,116 +6,106 @@ struct WelcomeView: View {
     let accent: Color
     var onAuthenticated: () -> Void
 
-    @State private var selectedFeature: Int = 0
+    @StateObject private var authService = AuthService.shared
     @State private var showAuthSheet = false
+    @State private var startAuthSheetInSignup = false
 
-    private let startButtonBlue = Color(red: 0 / 255, green: 122 / 255, blue: 255 / 255)
-
-    private var headline: String {
-        isEnglish
-            ? "Sphere — your guide to the world of music"
-            : "Sphere — твой проводник в мир музыки"
-    }
-
-    private var whyUsTitle: String { isEnglish ? "Why us" : "Почему мы" }
-
-    private var startTitle: String { isEnglish ? "Get started" : "Начать" }
-
-    private var featurePages: [(title: String, text: String)] {
-        if isEnglish {
-            return [
-                (
-                    "Multi-server",
-                    "Listen to music from several services at once with a single Sphere account."
-                ),
-                (
-                    "Convenience",
-                    "We combined a simple interface with ease of use."
-                ),
-                (
-                    "Security",
-                    "Your data is stored securely on our servers."
-                ),
-            ]
-        }
-        return [
-            (
-                "Мультисерверность",
-                "Слушайте музыку сразу с нескольких сервисов, используя один аккаунт нашего приложения."
-            ),
-            (
-                "Удобство",
-                "Мы совместили простоту интерфейса и удобство в использовании."
-            ),
-            (
-                "Безопасность",
-                "Ваши данные надёжно хранятся на наших серверах."
-            ),
-        ]
-    }
+    private var appTitle: String { "Node" }
+    private var slogan: String { isEnglish ? "All your music in one place" : "вся ваша музыка в одном месте" }
+    private var registrationTitle: String { isEnglish ? "Register with Email" : "Регистрация по почте" }
 
     var body: some View {
         ZStack {
-            WelcomeBackgroundView()
+            WelcomeLoginCoverBackground()
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
 
                 VStack(spacing: 0) {
-                    Text(headline)
-                        .font(.system(size: 32, weight: .bold))
+                    Image("NodeAuthIcon")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 94, height: 94)
+                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                        )
+
+                    Text(appTitle.uppercased())
+                        .font(.nodeMono(size: 22, weight: .heavy))
+                        .tracking(8)
                         .foregroundStyle(.white)
+                        .padding(.top, 10)
+
+                    Text(slogan)
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundStyle(Color.gray.opacity(0.95))
                         .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
+                        .padding(.top, 2)
+                        .padding(.bottom, 18)
                         .padding(.horizontal, 24)
 
-                    Rectangle()
-                        .fill(Color.white.opacity(0.45))
-                        .frame(width: 180, height: 1)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 20)
-                        .padding(.bottom, 24)
-
-                    Text(whyUsTitle)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.95))
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 24)
-
-                    TabView(selection: $selectedFeature) {
-                        ForEach(featurePages.indices, id: \.self) { i in
-                            featureSlide(title: featurePages[i].title, body: featurePages[i].text)
-                                .padding(.horizontal, 28)
-                                .tag(i)
+                    SignInWithAppleButton(
+                        .signUp,
+                        onRequest: { request in
+                            request.requestedScopes = [.fullName, .email]
+                        },
+                        onCompletion: { result in
+                            switch result {
+                            case .success(let authorization):
+                                guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+                                    authService.authError = isEnglish ? "Apple authorization failed" : "Ошибка авторизации Apple"
+                                    return
+                                }
+                                Task {
+                                    await authService.signInWithApple(credential: credential)
+                                    if authService.isSignedIn {
+                                        onAuthenticated()
+                                    }
+                                }
+                            case .failure(let error):
+                                authService.authError = error.localizedDescription
+                            }
                         }
-                    }
-                    .tabViewStyle(.page(indexDisplayMode: .always))
-                    .frame(height: 260)
-                    .padding(.top, 20)
-                }
-                .frame(maxWidth: .infinity)
-                .opacity(showAuthSheet ? 0 : 1)
-                .animation(.easeInOut(duration: 0.45), value: showAuthSheet)
+                    )
+                    .signInWithAppleButtonStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 58)
+                    .clipShape(RoundedRectangle(cornerRadius: 29, style: .continuous))
+                    .padding(.bottom, 12)
 
-                Spacer(minLength: 0)
-
-                Button {
-                    withAnimation(.spring(response: 0.85, dampingFraction: 0.86)) {
-                        showAuthSheet = true
+                    Button {
+                        withAnimation(.spring(response: 0.75, dampingFraction: 0.86)) {
+                            startAuthSheetInSignup = true
+                            showAuthSheet = true
+                        }
+                    } label: {
+                        Text(registrationTitle)
+                            .font(.system(size: 19, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 58)
+                            .background(Color.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 29, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 29, style: .continuous)
+                                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                            )
                     }
-                } label: {
-                    Text(startTitle)
-                        .font(.system(size: 17, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .foregroundStyle(.white)
-                        .background(startButtonBlue, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                    if let err = authService.authError, !err.isEmpty {
+                        Text(err)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color.red.opacity(0.95))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 8)
+                            .padding(.top, 12)
+                    }
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 28)
-                .padding(.bottom, 28)
+                .padding(.bottom, 32)
                 .opacity(showAuthSheet ? 0 : 1)
                 .animation(.easeInOut(duration: 0.35), value: showAuthSheet)
             }
@@ -129,15 +120,18 @@ struct WelcomeView: View {
                 AuthSheetView(
                     isEnglish: isEnglish,
                     accent: accent,
+                    startInSignup: startAuthSheetInSignup,
                     onAuthenticated: {
                         withAnimation(.spring(response: 0.7, dampingFraction: 0.86)) {
                             showAuthSheet = false
+                            startAuthSheetInSignup = false
                         }
                         onAuthenticated()
                     },
                     onDismiss: {
                         withAnimation(.spring(response: 0.7, dampingFraction: 0.86)) {
                             showAuthSheet = false
+                            startAuthSheetInSignup = false
                         }
                     }
                 )
@@ -147,20 +141,5 @@ struct WelcomeView: View {
             }
         }
         .preferredColorScheme(.dark)
-    }
-
-    private func featureSlide(title: String, body: String) -> some View {
-        VStack(spacing: 14) {
-            Text(title)
-                .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-            Text(body)
-                .font(.system(size: 16))
-                .foregroundStyle(Color.white.opacity(0.88))
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 }

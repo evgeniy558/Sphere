@@ -1,6 +1,6 @@
 //
 //  DiscordRPC.swift
-//  Sphere
+//  Node
 //
 //  Discord Rich Presence: OAuth2 авторизация + Gateway WebSocket для отображения
 //  «Listening to …» в профиле Discord.
@@ -119,7 +119,7 @@ final class DiscordRPC: NSObject, ObservableObject {
         }
 
         var activity: [String: Any] = [
-            "name": "Sphere",
+            "name": "Node",
             "type": 2, // Listening
             "details": title,
         ]
@@ -130,7 +130,7 @@ final class DiscordRPC: NSObject, ObservableObject {
         activity["timestamps"] = ["start": startEpoch]
         activity["assets"] = [
             "large_image": "sphere_icon",
-            "large_text": "Sphere Music Player"
+            "large_text": "Node Music Player"
         ]
 
         currentActivity = activity
@@ -321,8 +321,8 @@ final class DiscordRPC: NSObject, ObservableObject {
                 "token": accessToken,
                 "properties": [
                     "os": "ios",
-                    "browser": "Sphere",
-                    "device": "Sphere"
+                    "browser": "Node",
+                    "device": "Node"
                 ],
                 "presence": presencePayload()
             ]

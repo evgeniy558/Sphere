@@ -1,6 +1,6 @@
 //
-//  SphereApp.swift
-//  Sphere
+//  NodeApp.swift
+//  Node
 //
 //  Created by Evgeniy on 01.03.2026.
 //
@@ -49,6 +49,7 @@ struct SphereApp: App {
                     }
                 }
             }
+            .preferredColorScheme(.dark)
             .task {
                 SphereBackendAuth.shared.start()
                 await UpdateChecker.shared.checkForUpdates()

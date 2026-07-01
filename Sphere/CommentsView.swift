@@ -199,7 +199,7 @@ struct CommentsView: View {
                 print("[Comments] send error: \(error)")
                 let msg: String
                 if case SphereAPIError.notAuthenticated = error {
-                    msg = "Sign in to the Sphere service to post comments."
+                    msg = "Sign in to Node to post comments."
                 } else {
                     msg = error.localizedDescription
                 }

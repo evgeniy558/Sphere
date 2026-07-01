@@ -381,6 +381,112 @@ private struct SphereSmallWidgetView: View {
     }
 }
 
+private struct SphereMediumMusicWidgetView: View {
+    let model: WidgetTrackModel
+    @Environment(\.redactionReasons) private var redactionReasons
+
+    var body: some View {
+        Group {
+            if let url = tapURL {
+                content.widgetURL(url)
+            } else {
+                content
+            }
+        }
+        .modifier(WidgetBackgroundModifier(gradient: model.backgroundGradient()))
+        .unredacted()
+    }
+
+    private var tapURL: URL? {
+        if redactionReasons.contains(.placeholder) { return nil }
+        return URL(string: "sphere://play")
+    }
+
+    private var content: some View {
+        HStack(spacing: 12) {
+            cover
+                .frame(width: 100, height: 100)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.8)
+                }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(model.title)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.78)
+
+                if !model.artist.isEmpty {
+                    Text(model.artist)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.74))
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                HStack(spacing: 8) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.black)
+                        .frame(width: 24, height: 24)
+                        .background(Color.white, in: Circle())
+
+                    Capsule()
+                        .fill(Color.white.opacity(0.24))
+                        .frame(height: 6)
+                        .overlay(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.white.opacity(0.96))
+                                .frame(width: 64, height: 6)
+                        }
+                }
+
+                HStack {
+                    Text("Now Playing")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.58))
+                    Spacer(minLength: 0)
+                    WidgetCatalogImage.spherelogo(size: 16)
+                        .opacity(0.9)
+                }
+            }
+        }
+        .padding(14)
+    }
+
+    @ViewBuilder
+    private var cover: some View {
+        if let ui = model.cover {
+            Image(uiImage: ui)
+                .resizable()
+                .scaledToFill()
+        } else {
+            ZStack {
+                Rectangle().fill(model.tintColor.opacity(0.85))
+                WidgetCatalogImage.voxmusic(padding: 12)
+            }
+        }
+    }
+}
+
+private struct SphereAdaptiveWidgetView: View {
+    let model: WidgetTrackModel
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        switch family {
+        case .systemMedium:
+            SphereMediumMusicWidgetView(model: model)
+        default:
+            SphereSmallWidgetView(model: model)
+        }
+    }
+}
+
 private struct WidgetBackgroundModifier: ViewModifier {
     let gradient: LinearGradient
 
@@ -405,11 +511,11 @@ private struct WidgetBackgroundModifier: ViewModifier {
 private struct SphereHomeScreenWidgetLegacy: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: Bridge.timelineKind, provider: Provider()) { entry in
-            SphereSmallWidgetView(model: entry.model)
+            SphereAdaptiveWidgetView(model: entry.model)
         }
-        .configurationDisplayName("Sphere")
-        .description("Просмотр последней воспроизводимой песни")
-        .supportedFamilies([.systemSmall])
+        .configurationDisplayName("Node Music")
+        .description("Now playing from Node")
+        .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
 
@@ -418,18 +524,26 @@ private struct SphereHomeScreenWidgetLegacy: Widget {
 private struct SphereHomeScreenWidgetModern: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: Bridge.timelineKind, provider: Provider()) { entry in
-            SphereSmallWidgetView(model: entry.model)
+            SphereAdaptiveWidgetView(model: entry.model)
         }
-        .configurationDisplayName("Sphere")
-        .description("Просмотр последней воспроизводимой песни")
-        .supportedFamilies([.systemSmall])
+        .configurationDisplayName("Node Music")
+        .description("Now playing from Node")
+        .supportedFamilies([.systemSmall, .systemMedium])
         .contentMarginsDisabled()
     }
 }
 
 @main
 struct SphereWidgetBundle: WidgetBundle {
+    @WidgetBundleBuilder
     var body: some Widget {
+        homeWidget
+        if #available(iOSApplicationExtension 16.2, *) {
+            NodeUploadLiveActivity()
+        }
+    }
+
+    private var homeWidget: some Widget {
         if #available(iOSApplicationExtension 17.0, *) {
             return SphereHomeScreenWidgetModern()
         } else {

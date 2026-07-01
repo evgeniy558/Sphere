@@ -1,6 +1,6 @@
 //
 //  WidgetShared.swift
-//  Sphere
+//  Node
 //
 //  Данные для виджета: последний воспроизведённый трек в App Group.
 //
@@ -37,7 +37,7 @@ enum WidgetShared {
     static let keyWidgetBgG = "sphere_widgetBgG"
     static let keyWidgetBgB = "sphere_widgetBgB"
     static let keyWidgetCoverSource = "sphere_widgetCoverSource"
-    /// Относительный путь в контейнере группы (ShareInbox/...) после «Поделиться» в Sphere.
+    /// Относительный путь в контейнере группы (ShareInbox/...) после «Поделиться» в Node.
     static let keyShareImportRelativePath = "sphere_shareImportRelativePath"
     /// Заголовок/исполнитель с превью расширения (имя исходного файла или метаданные), чтобы в библиотеке не было «imported_…».
     static let keyShareImportDisplayTitle = "sphere_shareImportDisplayTitle"

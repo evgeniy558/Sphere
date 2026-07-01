@@ -1,5 +1,5 @@
 //
-//  SphereEqualizerSheet.swift
+//  NodeEqualizerSheet.swift
 //
 
 import SwiftUI

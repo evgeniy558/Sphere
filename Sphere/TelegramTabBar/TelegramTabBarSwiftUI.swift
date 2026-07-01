@@ -4,19 +4,16 @@ import UIKit
 struct TabBarSwiftUI: UIViewRepresentable {
     let homeTitle: String
     let favoritesTitle: String
-    let profileTitle: String
-    let searchTitle: String
+    let createTitle: String
     let accent: Color
-    let avatarImage: UIImage?
     @Binding var selectedTab: MainAppTab
-    var onSettingsFiveTaps: (() -> Void)?
+    var onCreateTap: (() -> Void)?
 
     private func tabItems() -> [SphereTabBarView.Item] {
         [
             .init(id: MainAppTab.home.rawValue, title: homeTitle, imageName: "Spherelogo"),
-            .init(id: MainAppTab.favorites.rawValue, title: favoritesTitle, imageName: "heart.fill"),
-            .init(id: MainAppTab.profile.rawValue, title: profileTitle, imageName: "person.fill", avatarImage: avatarImage),
-            .init(id: MainAppTab.search.rawValue, title: searchTitle, imageName: "magnifyingglass"),
+            .init(id: MainAppTab.favorites.rawValue, title: favoritesTitle, imageName: "books.vertical.fill"),
+            .init(id: MainAppTab.create.rawValue, title: createTitle, imageName: "plus"),
         ]
     }
 
@@ -29,19 +26,26 @@ struct TabBarSwiftUI: UIViewRepresentable {
             isDark: UITraitCollection.current.userInterfaceStyle == .dark
         )
         view.onSelect = { id in
+            if id == MainAppTab.create.rawValue {
+                DispatchQueue.main.async { onCreateTap?() }
+                return
+            }
             if let tab = MainAppTab(rawValue: id) {
                 DispatchQueue.main.async { selectedTab = tab }
             }
         }
-        view.onSettingsFiveTaps = onSettingsFiveTaps
         return view
     }
 
     func updateUIView(_ uiView: SphereTabBarView, context: Context) {
-        uiView.onSettingsFiveTaps = onSettingsFiveTaps
+        let displayId: Int = {
+            if selectedTab == .create { return MainAppTab.home.rawValue }
+            if selectedTab == .profile { return MainAppTab.home.rawValue }
+            return selectedTab.rawValue
+        }()
         uiView.configure(
             items: tabItems(),
-            selectedId: selectedTab.rawValue,
+            selectedId: displayId,
             accentColor: UIColor(accent),
             isDark: context.environment.colorScheme == .dark
         )

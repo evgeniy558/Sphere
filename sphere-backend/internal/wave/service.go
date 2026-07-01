@@ -485,6 +485,7 @@ func (s *Service) validateSession(sessionID, userID string) bool {
 }
 
 // buildSearchQueries produces search strings from the top-weighted genres and artists.
+// Falls back to popular genre seeds when the user has no listening history.
 func (s *Service) buildSearchQueries(profile *TasteProfile, maxGenres, maxArtists int) []string {
 	topGenres := topKeys(profile.GenreWeights, maxGenres)
 	topArtists := topKeys(profile.ArtistWeights, maxArtists)
@@ -496,6 +497,15 @@ func (s *Service) buildSearchQueries(profile *TasteProfile, maxGenres, maxArtist
 	for _, a := range topArtists {
 		queries = append(queries, a)
 	}
+
+	// Fallback: if no history at all, use popular genre seeds so the wave always works
+	if len(queries) == 0 {
+		queries = []string{
+			"indie rock", "electronic music", "alternative rock",
+			"hip hop", "synth pop", "jazz", "neo soul", "pop music",
+		}
+	}
+
 	return queries
 }
 

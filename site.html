@@ -1,0 +1,1152 @@
+
+# Create the full landing page HTML with dark theme and smooth animations
+# The logo is black background with white lines - perfect for dark theme
+
+html_content = '''<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Node — Единая музыкальная библиотека</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a25;
+            --bg-card-hover: #222230;
+            --accent: #ffffff;
+            --accent-glow: rgba(255,255,255,0.15);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255,255,255,0.6);
+            --text-muted: rgba(255,255,255,0.35);
+            --border: rgba(255,255,255,0.08);
+            --gradient-1: #1a1a2e;
+            --gradient-2: #16213e;
+            --gradient-3: #0f3460;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* Animated background particles */
+        .bg-particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .particle {
+            position: absolute;
+            width: 2px;
+            height: 2px;
+            background: rgba(255,255,255,0.3);
+            border-radius: 50%;
+            animation: float 15s infinite ease-in-out;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0) translateX(0); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { transform: translateY(-100vh) translateX(50px); opacity: 0; }
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(10,10,15,0.8);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            transition: all 0.3s ease;
+        }
+
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+        }
+
+        .nav-logo img {
+            width: 40px;
+            height: 40px;
+            filter: brightness(2);
+        }
+
+        .nav-logo span {
+            font-size: 22px;
+            font-weight: 800;
+            color: var(--text-primary);
+            letter-spacing: -0.5px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 32px;
+            align-items: center;
+        }
+
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: color 0.3s ease;
+            position: relative;
+        }
+
+        .nav-links a:hover {
+            color: var(--text-primary);
+        }
+
+        .nav-links a::after {
+            content: '';
+            position: absolute;
+            bottom: -4px;
+            left: 0;
+            width: 0;
+            height: 2px;
+            background: var(--text-primary);
+            transition: width 0.3s ease;
+        }
+
+        .nav-links a:hover::after {
+            width: 100%;
+        }
+
+        .btn-primary {
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            padding: 12px 28px;
+            border-radius: 100px;
+            font-weight: 600;
+            font-size: 14px;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 40px rgba(255,255,255,0.2);
+        }
+
+        .btn-outline {
+            background: transparent;
+            color: var(--text-primary);
+            padding: 12px 28px;
+            border-radius: 100px;
+            font-weight: 600;
+            font-size: 14px;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-outline:hover {
+            border-color: var(--text-primary);
+            background: rgba(255,255,255,0.05);
+        }
+
+        /* Hero Section */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            padding: 120px 40px 80px;
+            z-index: 1;
+        }
+
+        .hero-content {
+            max-width: 900px;
+            text-align: center;
+        }
+
+        .hero-logo {
+            width: 180px;
+            height: 180px;
+            margin: 0 auto 40px;
+            animation: pulse-glow 4s infinite ease-in-out;
+            filter: brightness(2);
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { filter: brightness(2) drop-shadow(0 0 20px rgba(255,255,255,0.1)); }
+            50% { filter: brightness(2.2) drop-shadow(0 0 40px rgba(255,255,255,0.2)); }
+        }
+
+        .hero h1 {
+            font-size: clamp(48px, 8vw, 80px);
+            font-weight: 900;
+            line-height: 1.1;
+            margin-bottom: 24px;
+            letter-spacing: -2px;
+            background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.7) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero p {
+            font-size: clamp(18px, 2.5vw, 24px);
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin: 0 auto 40px;
+            font-weight: 400;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .platform-badges {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            margin-top: 48px;
+            flex-wrap: wrap;
+        }
+
+        .platform-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            transition: all 0.3s ease;
+        }
+
+        .platform-badge:hover {
+            border-color: rgba(255,255,255,0.2);
+            transform: translateY(-2px);
+        }
+
+        .platform-badge svg {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
+        }
+
+        /* Wave animation */
+        .wave-container {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 200px;
+            overflow: hidden;
+            z-index: 1;
+        }
+
+        .wave {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 200%;
+            height: 100px;
+            background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 320'%3E%3Cpath fill='%2312121a' fill-opacity='1' d='M0,192L48,197.3C96,203,192,213,288,229.3C384,245,480,267,576,250.7C672,235,768,181,864,181.3C960,181,1056,235,1152,234.7C1248,235,1344,181,1392,154.7L1440,128L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z'%3E%3C/path%3E%3C/svg%3E") repeat-x;
+            background-size: 50% 100%;
+            animation: wave-move 20s linear infinite;
+            opacity: 0.5;
+        }
+
+        .wave:nth-child(2) {
+            animation-delay: -5s;
+            opacity: 0.3;
+            bottom: 10px;
+        }
+
+        .wave:nth-child(3) {
+            animation-delay: -10s;
+            opacity: 0.2;
+            bottom: 20px;
+        }
+
+        @keyframes wave-move {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+
+        /* Features Section */
+        .features {
+            padding: 100px 40px;
+            position: relative;
+            z-index: 2;
+            background: var(--bg-secondary);
+        }
+
+        .section-header {
+            text-align: center;
+            max-width: 600px;
+            margin: 0 auto 80px;
+        }
+
+        .section-header h2 {
+            font-size: clamp(32px, 5vw, 48px);
+            font-weight: 800;
+            margin-bottom: 16px;
+            letter-spacing: -1px;
+        }
+
+        .section-header p {
+            color: var(--text-secondary);
+            font-size: 18px;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 40px 32px;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-8px);
+            border-color: rgba(255,255,255,0.15);
+            background: var(--bg-card-hover);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        }
+
+        .feature-card:hover::before {
+            opacity: 1;
+        }
+
+        .feature-icon {
+            width: 56px;
+            height: 56px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 24px;
+            font-size: 24px;
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover .feature-icon {
+            background: rgba(255,255,255,0.1);
+            transform: scale(1.1);
+        }
+
+        .feature-card h3 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .feature-card p {
+            color: var(--text-secondary);
+            font-size: 15px;
+            line-height: 1.6;
+        }
+
+        /* Services Section */
+        .services {
+            padding: 100px 40px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .services-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 80px;
+            align-items: center;
+        }
+
+        .services-text h2 {
+            font-size: clamp(32px, 5vw, 48px);
+            font-weight: 800;
+            margin-bottom: 24px;
+            letter-spacing: -1px;
+        }
+
+        .services-text p {
+            color: var(--text-secondary);
+            font-size: 18px;
+            margin-bottom: 32px;
+        }
+
+        .service-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .service-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .service-item:hover {
+            border-color: rgba(255,255,255,0.15);
+            transform: translateX(8px);
+        }
+
+        .service-item .icon {
+            width: 44px;
+            height: 44px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .service-item .info h4 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .service-item .info span {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .services-visual {
+            position: relative;
+        }
+
+        .phone-mockup {
+            width: 100%;
+            max-width: 400px;
+            margin: 0 auto;
+            background: var(--bg-card);
+            border-radius: 40px;
+            padding: 20px;
+            border: 1px solid var(--border);
+            box-shadow: 0 40px 80px rgba(0,0,0,0.5);
+            animation: float-phone 6s ease-in-out infinite;
+        }
+
+        @keyframes float-phone {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+
+        .phone-screen {
+            background: var(--bg-primary);
+            border-radius: 30px;
+            padding: 24px;
+            aspect-ratio: 9/16;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .phone-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .phone-header .time {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .phone-content h3 {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 16px;
+        }
+
+        .track-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            background: var(--bg-card);
+            border-radius: 12px;
+            margin-bottom: 8px;
+        }
+
+        .track-cover {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, #333, #555);
+            border-radius: 8px;
+            flex-shrink: 0;
+        }
+
+        .track-info h4 {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .track-info span {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .eq-visual {
+            display: flex;
+            align-items: flex-end;
+            gap: 3px;
+            height: 40px;
+            margin-top: 20px;
+            justify-content: center;
+        }
+
+        .eq-bar {
+            width: 4px;
+            background: var(--text-primary);
+            border-radius: 2px;
+            animation: eq-wave 1.2s ease-in-out infinite;
+        }
+
+        .eq-bar:nth-child(1) { height: 20%; animation-delay: 0s; }
+        .eq-bar:nth-child(2) { height: 60%; animation-delay: 0.1s; }
+        .eq-bar:nth-child(3) { height: 40%; animation-delay: 0.2s; }
+        .eq-bar:nth-child(4) { height: 80%; animation-delay: 0.3s; }
+        .eq-bar:nth-child(5) { height: 50%; animation-delay: 0.4s; }
+        .eq-bar:nth-child(6) { height: 70%; animation-delay: 0.5s; }
+        .eq-bar:nth-child(7) { height: 30%; animation-delay: 0.6s; }
+        .eq-bar:nth-child(8) { height: 90%; animation-delay: 0.7s; }
+        .eq-bar:nth-child(9) { height: 45%; animation-delay: 0.8s; }
+        .eq-bar:nth-child(10) { height: 65%; animation-delay: 0.9s; }
+        .eq-bar:nth-child(11) { height: 35%; animation-delay: 1.0s; }
+        .eq-bar:nth-child(12) { height: 75%; animation-delay: 1.1s; }
+
+        @keyframes eq-wave {
+            0%, 100% { transform: scaleY(0.5); opacity: 0.5; }
+            50% { transform: scaleY(1); opacity: 1; }
+        }
+
+        /* Premium Section */
+        .premium {
+            padding: 100px 40px;
+            position: relative;
+            z-index: 2;
+            background: var(--bg-secondary);
+        }
+
+        .premium-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 24px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .premium-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 40px 32px;
+            text-align: center;
+            transition: all 0.4s ease;
+            position: relative;
+        }
+
+        .premium-card:hover {
+            transform: translateY(-8px);
+            border-color: rgba(255,255,255,0.2);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        }
+
+        .premium-card .icon {
+            width: 64px;
+            height: 64px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            font-size: 28px;
+            transition: all 0.3s ease;
+        }
+
+        .premium-card:hover .icon {
+            background: rgba(255,255,255,0.1);
+            transform: scale(1.1) rotate(5deg);
+        }
+
+        .premium-card h3 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .premium-card p {
+            color: var(--text-secondary);
+            font-size: 15px;
+        }
+
+        /* CTA Section */
+        .cta {
+            padding: 120px 40px;
+            text-align: center;
+            position: relative;
+            z-index: 2;
+        }
+
+        .cta-content {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .cta h2 {
+            font-size: clamp(36px, 6vw, 56px);
+            font-weight: 900;
+            margin-bottom: 24px;
+            letter-spacing: -2px;
+        }
+
+        .cta p {
+            color: var(--text-secondary);
+            font-size: 20px;
+            margin-bottom: 40px;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn-large {
+            padding: 16px 40px;
+            font-size: 16px;
+        }
+
+        /* Footer */
+        footer {
+            padding: 60px 40px 40px;
+            border-top: 1px solid var(--border);
+            position: relative;
+            z-index: 2;
+        }
+
+        .footer-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 24px;
+        }
+
+        .footer-logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .footer-logo img {
+            width: 32px;
+            height: 32px;
+            filter: brightness(2);
+        }
+
+        .footer-logo span {
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 32px;
+        }
+
+        .footer-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 14px;
+            transition: color 0.3s ease;
+        }
+
+        .footer-links a:hover {
+            color: var(--text-primary);
+        }
+
+        .footer-bottom {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        /* Scroll animations */
+        .fade-in {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .fade-in.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            nav {
+                padding: 16px 20px;
+            }
+
+            .nav-links {
+                display: none;
+            }
+
+            .hero {
+                padding: 100px 20px 60px;
+            }
+
+            .features, .services, .premium, .cta {
+                padding: 60px 20px;
+            }
+
+            .services-content {
+                grid-template-columns: 1fr;
+                gap: 40px;
+            }
+
+            .footer-content {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .footer-links {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+        }
+
+        /* Glow effect for premium cards */
+        .glow-effect {
+            position: absolute;
+            width: 200px;
+            height: 200px;
+            background: radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%);
+            border-radius: 50%;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .feature-card:hover .glow-effect,
+        .premium-card:hover .glow-effect {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <!-- Background Particles -->
+    <div class="bg-particles" id="particles"></div>
+
+    <!-- Navigation -->
+    <nav>
+        <a href="#" class="nav-logo">
+            <img src="image.png" alt="Node Logo">
+            <span>Node</span>
+        </a>
+        <div class="nav-links">
+            <a href="#features">Возможности</a>
+            <a href="#services">Сервисы</a>
+            <a href="#premium">Подписка</a>
+            <a href="https://t.me/nodemusicios" class="btn-primary" target="_blank">Скачать</a>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-content">
+            <img src="image.png" alt="Node" class="hero-logo">
+            <h1>Одна библиотека.<br>Вся музыка.</h1>
+            <p>Объединяем треки из Deezer, SoundCloud, YouTube и Spotify в единое пространство. Без границ между сервисами.</p>
+            <div class="hero-buttons">
+                <a href="https://t.me/nodemusicios" class="btn-primary btn-large" target="_blank">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Скачать приложение
+                </a>
+                <a href="https://t.me/nodemusicios" class="btn-outline btn-large" target="_blank">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    Купить подписку
+                </a>
+            </div>
+            <div class="platform-badges">
+                <div class="platform-badge">
+                    <svg viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+                    iOS
+                </div>
+                <div class="platform-badge">
+                    <svg viewBox="0 0 24 24"><path d="M17.523 15.341c-.51 1.11-1.04 2.25-1.95 2.25-1.15 0-1.43-1.07-2.71-1.07-1.28 0-1.57 1.07-2.71 1.07-.91 0-1.44-1.14-1.95-2.25-1.43-3.11-1.23-6.89 1.12-7.93.65-.29 1.23-.32 1.72-.32.64 0 1.28.19 1.82.19.54 0 1.18-.19 1.82-.19.49 0 1.07.03 1.72.32 2.35 1.04 2.55 4.82 1.12 7.93zM12.05 6.5c.82-1.02 1.38-2.43 1.18-3.85-1.14.05-2.52.76-3.33 1.78-.75.93-1.41 2.42-1.23 3.84 1.3.1 2.63-.66 3.38-1.77z"/></svg>
+                    Android
+                </div>
+            </div>
+        </div>
+        <div class="wave-container">
+            <div class="wave"></div>
+            <div class="wave"></div>
+            <div class="wave"></div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <div class="section-header fade-in">
+            <h2>Всё, что нужно для музыки</h2>
+            <p>Мощные инструменты для тех, кто живёт музыкой каждый день</p>
+        </div>
+        <div class="features-grid">
+            <div class="feature-card fade-in">
+                <div class="glow-effect"></div>
+                <div class="feature-icon">🎵</div>
+                <h3>Единая библиотека</h3>
+                <p>Все треки из Deezer, SoundCloud, YouTube и Spotify собраны в одном месте. Никаких переключений между приложениями.</p>
+            </div>
+            <div class="feature-card fade-in">
+                <div class="glow-effect"></div>
+                <div class="feature-icon">⚡</div>
+                <h3>Мгновенный поиск</h3>
+                <p>Находите любой трек за секунды. Интеллектуальный поиск работает по названию, исполнителю, альбому или даже тексту песни.</p>
+            </div>
+            <div class="feature-card fade-in">
+                <div class="glow-effect"></div>
+                <div class="feature-icon">📱</div>
+                <h3>iOS и Android</h3>
+                <p>Работает на всех ваших устройствах. Синхронизация плейлистов, истории и настроек между платформами.</p>
+            </div>
+            <div class="feature-card fade-in">
+                <div class="glow-effect"></div>
+                <div class="feature-icon">🌙</div>
+                <h3>Тёмная тема</h3>
+                <p>Продуманный тёмный интерфейс, который бережет глаза при прослушивании в ночное время и выглядит стильно днём.</p>
+            </div>
+            <div class="feature-card fade-in">
+                <div class="glow-effect"></div>
+                <div class="feature-icon">🔁</div>
+                <h3>Офлайн режим</h3>
+                <p>Сохраняйте треки для прослушивания без интернета. Идеально для поездок, спортзала и полётов.</p>
+            </div>
+            <div class="feature-card fade-in">
+                <div class="glow-effect"></div>
+                <div class="feature-icon">🎧</div>
+                <h3>Высокое качество</h3>
+                <p>Поддержка lossless-форматов и адаптивного битрейта. Музыка звучит так, как задумали авторы.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Services Section -->
+    <section class="services" id="services">
+        <div class="services-content">
+            <div class="services-text fade-in">
+                <h2>Все сервисы — одно приложение</h2>
+                <p>Node объединяет музыкальные платформы, которые вы уже используете. Больше не нужно переключаться между приложениями.</p>
+                <div class="service-list">
+                    <div class="service-item">
+                        <div class="icon">🎶</div>
+                        <div class="info">
+                            <h4>Deezer</h4>
+                            <span>Миллионы треков и подкастов</span>
+                        </div>
+                    </div>
+                    <div class="service-item">
+                        <div class="icon">☁️</div>
+                        <div class="info">
+                            <h4>SoundCloud</h4>
+                            <span>Инди-исполнители и ремиксы</span>
+                        </div>
+                    </div>
+                    <div class="service-item">
+                        <div class="icon">▶️</div>
+                        <div class="info">
+                            <h4>YouTube</h4>
+                            <span>Клипы и музыкальные видео</span>
+                        </div>
+                    </div>
+                    <div class="service-item">
+                        <div class="icon">🟢</div>
+                        <div class="info">
+                            <h4>Spotify</h4>
+                            <span>Популярные хиты и плейлисты</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="services-visual fade-in">
+                <div class="phone-mockup">
+                    <div class="phone-screen">
+                        <div class="phone-header">
+                            <span class="time">9:41</span>
+                            <span>🔋</span>
+                        </div>
+                        <div class="phone-content">
+                            <h3>Сейчас играет</h3>
+                            <div class="track-item">
+                                <div class="track-cover"></div>
+                                <div class="track-info">
+                                    <h4>Midnight City</h4>
+                                    <span>M83 • Deezer</span>
+                                </div>
+                            </div>
+                            <div class="track-item">
+                                <div class="track-cover" style="background: linear-gradient(135deg, #444, #666);"></div>
+                                <div class="track-info">
+                                    <h4>Starboy</h4>
+                                    <span>The Weeknd • Spotify</span>
+                                </div>
+                            </div>
+                            <div class="track-item">
+                                <div class="track-cover" style="background: linear-gradient(135deg, #555, #777);"></div>
+                                <div class="track-info">
+                                    <h4>Do I Wanna Know?</h4>
+                                    <span>Arctic Monkeys • YouTube</span>
+                                </div>
+                            </div>
+                            <div class="eq-visual">
+                                <div class="eq-bar"></div>
+                                <div class="eq-bar"></div>
+                                <div class="eq-bar"></div>
+                                <div class="eq-bar"></div>
+                                <div class="eq-bar"></div>
+                                <div class="eq-bar"></div>
+                                <div class="eq-bar"></div>
+                                <div class="eq-bar"></div>
+                                <div class="eq-bar"></div>
+                                <div class="eq-bar"></div>
+                                <div class="eq-bar"></div>
+                                <div class="eq-bar"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Premium Section -->
+    <section class="premium" id="premium">
+        <div class="section-header fade-in">
+            <h2>Преимущества подписки</h2>
+            <p>Разблокируйте полный потенциал Node</p>
+        </div>
+        <div class="premium-grid">
+            <div class="premium-card fade-in">
+                <div class="glow-effect"></div>
+                <div class="icon">🎚️</div>
+                <h3>Эквалайзер</h3>
+                <p>10-полосный эквалайзер с пресетами для разных жанров. Настройте звучание под свои наушники и вкус.</p>
+            </div>
+            <div class="premium-card fade-in">
+                <div class="glow-effect"></div>
+                <div class="icon">⏩</div>
+                <h3>Изменение скорости</h3>
+                <p>Меняйте темп воспроизведения от 0.5x до 2x. Идеально для тренировок, обучения и создания миксов.</p>
+            </div>
+            <div class="premium-card fade-in">
+                <div class="glow-effect"></div>
+                <div class="icon">🎨</div>
+                <h3>Кастомизация</h3>
+                <p>Персонализируйте интерфейс: цвета, шрифты, расположение элементов. Сделайте Node своим.</p>
+            </div>
+            <div class="premium-card fade-in">
+                <div class="glow-effect"></div>
+                <div class="icon">🚀</div>
+                <h3>Приоритетная поддержка</h3>
+                <p>Ответы на вопросы в течение часа. Прямой контакт с командой разработчиков.</p>
+            </div>
+        </div>
+        <div style="text-align: center; margin-top: 48px;">
+            <a href="https://t.me/nodemusicios" class="btn-primary btn-large" target="_blank">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                Оформить подписку
+            </a>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta">
+        <div class="cta-content fade-in">
+            <h2>Начните слушать<br>по-новому</h2>
+            <p>Скачайте Node сейчас и получите доступ к единой музыкальной вселенной</p>
+            <div class="cta-buttons">
+                <a href="https://t.me/nodemusicios" class="btn-primary btn-large" target="_blank">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Скачать для iOS
+                </a>
+                <a href="https://t.me/nodemusicios" class="btn-outline btn-large" target="_blank">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Скачать для Android
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <div class="footer-logo">
+                <img src="image.png" alt="Node">
+                <span>Node</span>
+            </div>
+            <div class="footer-links">
+                <a href="https://t.me/nodemusicios" target="_blank">Telegram</a>
+                <a href="https://t.me/nodemusicios" target="_blank">Скачать</a>
+                <a href="https://t.me/nodemusicios" target="_blank">Подписка</a>
+                <a href="https://t.me/nodemusicios" target="_blank">Поддержка</a>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>© 2026 Node. Все ссылки ведут на <a href="https://t.me/nodemusicios" target="_blank" style="color: var(--text-secondary);">@nodemusicios</a></p>
+        </div>
+    </footer>
+
+    <script>
+        // Generate particles
+        const particlesContainer = document.getElementById('particles');
+        for (let i = 0; i < 50; i++) {
+            const particle = document.createElement('div');
+            particle.className = 'particle';
+            particle.style.left = Math.random() * 100 + '%';
+            particle.style.top = Math.random() * 100 + '%';
+            particle.style.animationDelay = Math.random() * 15 + 's';
+            particle.style.animationDuration = (10 + Math.random() * 10) + 's';
+            particlesContainer.appendChild(particle);
+        }
+
+        // Scroll animations
+        const observerOptions = {
+            threshold: 0.1,
+            rootMargin: '0px 0px -50px 0px'
+        };
+
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, observerOptions);
+
+        document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+
+        // Navbar scroll effect
+        let lastScroll = 0;
+        window.addEventListener('scroll', () => {
+            const nav = document.querySelector('nav');
+            const currentScroll = window.pageYOffset;
+            
+            if (currentScroll > 100) {
+                nav.style.background = 'rgba(10,10,15,0.95)';
+                nav.style.boxShadow = '0 4px 30px rgba(0,0,0,0.3)';
+            } else {
+                nav.style.background = 'rgba(10,10,15,0.8)';
+                nav.style.boxShadow = 'none';
+            }
+            
+            lastScroll = currentScroll;
+        });
+
+        // Smooth scroll for nav links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>'''
+
+# Save the HTML file
+output_path = '/mnt/agents/output/node_music_landing.html'
+with open(output_path, 'w', encoding='utf-8') as f:
+    f.write(html_content)
+
+print(f"Landing page saved to: {output_path}")
+print(f"File size: {len(html_content)} characters")

@@ -31,6 +31,8 @@ var providerDefaultCodec = map[string]string{
 	"deezer":     "mp3_320",
 	"youtube":    "aac_128",
 	"soundcloud": "mp3_128",
+	"yandex":     "mp3_192",
+	"vk":         "mp3_192",
 }
 
 // junkPatterns are removed from titles for normalization.

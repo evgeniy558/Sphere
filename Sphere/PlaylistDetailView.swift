@@ -12,10 +12,12 @@ struct PlaylistDetailView: View {
     let onShuffle: ([CatalogTrack]) -> Void
 
     @State private var isDownloading = false
+    @ObservedObject private var downloads = DownloadsStore.shared
     @State private var dominantColor: Color?
     @State private var coverImage: UIImage?
 
     private var tracks: [CatalogTrack] { playlist.tracks ?? [] }
+    private var allTracksDownloaded: Bool { downloads.isCollectionFullyDownloaded(tracks: tracks) }
     private var playlistLabel: String { isEnglish ? "Playlist" : "Плейлист" }
     private var themeColor: Color { dominantColor ?? accent }
 
@@ -178,14 +180,16 @@ struct PlaylistDetailView: View {
                     isDownloading = true
                     Task { @MainActor in
                         defer { isDownloading = false }
-                        for t in tracks {
-                            try? await DownloadsStore.shared.download(track: t)
+                        if let items = try? await SphereAPIClient.shared.getPlaylistDownloadManifest(provider: playlist.provider, id: playlist.id), !items.isEmpty {
+                            await downloads.downloadManifest(items)
+                        } else {
+                            await downloads.downloadAll(tracks: tracks)
                         }
                     }
                 } label: {
-                    Image(systemName: isDownloading ? "arrow.down.circle.fill" : "arrow.down.circle")
+                    Image(systemName: allTracksDownloaded ? "arrow.down.circle.fill" : (isDownloading ? "arrow.down.circle.fill" : "arrow.down.circle"))
                         .font(.system(size: 22))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(allTracksDownloaded ? .green : .secondary)
                 }
                 .buttonStyle(.plain)
                 .disabled(isDownloading || tracks.isEmpty)

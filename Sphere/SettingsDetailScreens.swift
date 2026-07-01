@@ -19,15 +19,9 @@ struct SettingsAppearanceScreen: View {
     @AppStorage("coverSeekShakeDotIndex") private var coverSeekShakeDotIndex: Int = 0
     @AppStorage("preferredColorScheme") private var preferredColorSchemeRaw: String = ""
 
-    private var appliedColorScheme: ColorScheme {
-        switch preferredColorSchemeRaw {
-        case "dark": return .dark
-        case "light": return .light
-        default: return resolvedColorSchemeFromMainApp
-        }
-    }
+    private var appliedColorScheme: ColorScheme { .dark }
 
-    private var isDark: Bool { appliedColorScheme == .dark }
+    private var isDark: Bool { true }
     private var screenBg: Color { isDark ? .black : Color(.systemBackground) }
 
     private var playerStyleTitle: String { isEnglish ? "Player style \(playerStyleIndex + 1)" : "Стиль плеера \(playerStyleIndex + 1)" }
@@ -108,11 +102,19 @@ struct SettingsAppearanceScreen: View {
                         )
                         .padding(.horizontal, 12)
                     }
-                    .padding(.vertical, 18)
+                    .padding(.vertical, 20)
                     .frame(maxWidth: .infinity)
                     .background(
-                        RoundedRectangle(cornerRadius: 36, style: .continuous)
-                            .fill(isDark ? Color(white: 0.12) : Color(white: 0.92))
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .fill(.ultraThinMaterial)
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .fill(Color.white.opacity(0.03))
+                        }
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.7)
                     )
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
@@ -155,11 +157,19 @@ struct SettingsAppearanceScreen: View {
                         )
                         .padding(.horizontal, 12)
                     }
-                    .padding(.vertical, 18)
+                    .padding(.vertical, 20)
                     .frame(maxWidth: .infinity)
                     .background(
-                        RoundedRectangle(cornerRadius: 36, style: .continuous)
-                            .fill(isDark ? Color(white: 0.12) : Color(white: 0.92))
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .fill(.ultraThinMaterial)
+                            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                                .fill(Color.white.opacity(0.03))
+                        }
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.7)
                     )
                 }
             }
@@ -167,10 +177,12 @@ struct SettingsAppearanceScreen: View {
             .padding(.top, 12)
             .padding(.bottom, 32)
         }
-        .background(screenBg)
+        .background(
+            NodeHarmonyBackground(isDarkMode: true, accent: accent, intensity: 0.3).ignoresSafeArea()
+        )
         .navigationTitle(isEnglish ? "Appearance" : "Оформление")
         .navigationBarTitleDisplayMode(.inline)
-        .preferredColorScheme(appliedColorScheme)
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -180,12 +192,10 @@ struct SettingsOtherScreen: View {
     let accent: Color
     let isEnglish: Bool
     let isDarkMode: Bool
-    @AppStorage("isEnglish") private var isEnglishStorage: Bool = false
     @AppStorage("sphereStreamLossless") private var streamLossless: Bool = false
     @ObservedObject private var discord = DiscordRPC.shared
     var onAddMusic: () -> Void
 
-    private var languageValue: String { isEnglishStorage ? "English" : "Русский" }
     private var addMusicTitle: String { isEnglish ? "Add music from device" : "Добавить музыку с устройства" }
 
     private var losslessTitle: String {
@@ -205,239 +215,59 @@ struct SettingsOtherScreen: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
-                if #available(iOS 26.0, *) {
-                    Button { isEnglishStorage.toggle() } label: {
-                        Text(languageValue)
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .overlay(alignment: .leading) {
-                                ZStack {
-                                    Circle().fill(isDarkMode ? .white : accent)
-                                    Image(systemName: "globe")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundStyle(isDarkMode ? accent : .white)
-                                }
-                                .frame(width: 32, height: 32)
-                                .padding(.leading, 6)
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .glassEffect(.regular.tint(isDarkMode ? accent : .white).interactive(), in: Capsule())
-                    .foregroundStyle(isDarkMode ? .white : accent)
-                    .shadow(color: isDarkMode ? .clear : Color.black.opacity(0.20), radius: 18, x: 0, y: 8)
+            VStack(spacing: 16) {
+                SettingsGroupContainer(isDarkMode: isDarkMode) {
+                    SettingsGroupRowLabel(icon: "plus.circle.fill", title: addMusicTitle, showsChevron: false)
+                        .contentShape(Rectangle())
+                        .onTapGesture { onAddMusic() }
 
-                    Button(action: onAddMusic) {
-                        Text(addMusicTitle)
-                            .font(.system(size: 16, weight: .semibold))
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .overlay(alignment: .leading) {
-                                ZStack {
-                                    Circle().fill(isDarkMode ? .white : accent)
-                                    Image(systemName: "plus.circle.fill")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundStyle(isDarkMode ? accent : .white)
-                                }
-                                .frame(width: 32, height: 32)
-                                .padding(.leading, 6)
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .glassEffect(.regular.tint(isDarkMode ? accent : .white).interactive(), in: Capsule())
-                    .foregroundStyle(isDarkMode ? .white : accent)
-                    .shadow(color: isDarkMode ? .clear : Color.black.opacity(0.20), radius: 18, x: 0, y: 8)
+                    Divider().overlay(Color.white.opacity(0.08)).padding(.leading, 62)
+
+                    SettingsGroupRowLabel(icon: streamLossless ? "waveform.badge.plus" : "waveform", title: losslessTitle, showsChevron: false)
+                        .contentShape(Rectangle())
+                        .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { streamLossless.toggle() } }
+
+                    Divider().overlay(Color.white.opacity(0.08)).padding(.leading, 62)
 
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { streamLossless.toggle() }
+                        if discord.discordUsername != nil { discord.disconnect() } else { discord.authorize() }
                     } label: {
-                        Text(losslessTitle)
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .overlay(alignment: .leading) {
-                                ZStack {
-                                    Circle().fill(isDarkMode ? .white : accent)
-                                    Image(systemName: streamLossless ? "waveform.badge.plus" : "waveform")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(isDarkMode ? accent : .white)
-                                }
-                                .frame(width: 32, height: 32)
-                                .padding(.leading, 6)
+                        HStack(spacing: 14) {
+                            ZStack {
+                                Circle().fill(Color(red: 0.35, green: 0.42, blue: 0.96).opacity(0.16))
+                                Image(systemName: "bubble.left.and.bubble.right.fill")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(Color(red: 0.35, green: 0.42, blue: 0.96))
                             }
-                    }
-                    .buttonStyle(.plain)
-                    .glassEffect(.regular.tint(isDarkMode ? accent : .white).interactive(), in: Capsule())
-                    .foregroundStyle(isDarkMode ? .white : accent)
-                    .shadow(color: isDarkMode ? .clear : Color.black.opacity(0.20), radius: 18, x: 0, y: 8)
-
-                    // Discord
-                    Button {
-                        if discord.discordUsername != nil {
-                            discord.disconnect()
-                        } else {
-                            discord.authorize()
+                            .frame(width: 34, height: 34)
+                            Text(discordButtonTitle)
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.white)
+                            Spacer()
                         }
-                    } label: {
-                        Text(discordButtonTitle)
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .overlay(alignment: .leading) {
-                                ZStack {
-                                    Circle().fill(isDarkMode ? .white : accent)
-                                    Image(systemName: "bubble.left.and.bubble.right.fill")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(isDarkMode ? accent : .white)
-                                }
-                                .frame(width: 32, height: 32)
-                                .padding(.leading, 6)
-                            }
+                        .padding(.horizontal, 16).padding(.vertical, 14)
                     }
                     .buttonStyle(.plain)
-                    .glassEffect(.regular.tint(isDarkMode ? accent : .white).interactive(), in: Capsule())
-                    .foregroundStyle(isDarkMode ? .white : accent)
-                    .shadow(color: isDarkMode ? .clear : Color.black.opacity(0.20), radius: 18, x: 0, y: 8)
 
                     if discord.discordUsername != nil {
-                        Button { discord.disconnect() } label: {
-                            Text(discordDisconnectTitle)
-                                .font(.system(size: 16, weight: .semibold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                        }
-                        .buttonStyle(.plain)
-                        .glassEffect(.regular.tint(Color.red.opacity(0.3)).interactive(), in: Capsule())
-                        .foregroundStyle(.red)
-                    }
-
-                    if let status = discord.statusText {
-                        Text(status)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Button { isEnglishStorage.toggle() } label: {
-                        Text(languageValue)
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .overlay(alignment: .leading) {
-                                ZStack {
-                                    Circle().fill(isDarkMode ? .white : accent)
-                                    Image(systemName: "globe")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundStyle(isDarkMode ? accent : .white)
-                                }
-                                .frame(width: 32, height: 32)
-                                .padding(.leading, 6)
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .background((isDarkMode ? accent : .white), in: Capsule())
-                    .foregroundStyle(isDarkMode ? .white : accent)
-                    .shadow(color: isDarkMode ? .clear : Color.black.opacity(0.20), radius: 18, x: 0, y: 8)
-
-                    Button(action: onAddMusic) {
-                        Text(addMusicTitle)
-                            .font(.system(size: 16, weight: .semibold))
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .overlay(alignment: .leading) {
-                                ZStack {
-                                    Circle().fill(isDarkMode ? .white : accent)
-                                    Image(systemName: "plus.circle.fill")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundStyle(isDarkMode ? accent : .white)
-                                }
-                                .frame(width: 32, height: 32)
-                                .padding(.leading, 6)
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .background((isDarkMode ? accent : .white), in: Capsule())
-                    .foregroundStyle(isDarkMode ? .white : accent)
-                    .shadow(color: isDarkMode ? .clear : Color.black.opacity(0.20), radius: 18, x: 0, y: 8)
-
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { streamLossless.toggle() }
-                    } label: {
-                        Text(losslessTitle)
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .overlay(alignment: .leading) {
-                                ZStack {
-                                    Circle().fill(isDarkMode ? .white : accent)
-                                    Image(systemName: streamLossless ? "waveform.badge.plus" : "waveform")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(isDarkMode ? accent : .white)
-                                }
-                                .frame(width: 32, height: 32)
-                                .padding(.leading, 6)
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .background((isDarkMode ? accent : .white), in: Capsule())
-                    .foregroundStyle(isDarkMode ? .white : accent)
-                    .shadow(color: isDarkMode ? .clear : Color.black.opacity(0.20), radius: 18, x: 0, y: 8)
-
-                    // Discord
-                    Button {
-                        if discord.discordUsername != nil {
-                            discord.disconnect()
-                        } else {
-                            discord.authorize()
-                        }
-                    } label: {
-                        Text(discordButtonTitle)
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .overlay(alignment: .leading) {
-                                ZStack {
-                                    Circle().fill(isDarkMode ? .white : accent)
-                                    Image(systemName: "bubble.left.and.bubble.right.fill")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(isDarkMode ? accent : .white)
-                                }
-                                .frame(width: 32, height: 32)
-                                .padding(.leading, 6)
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .background((isDarkMode ? accent : .white), in: Capsule())
-                    .foregroundStyle(isDarkMode ? .white : accent)
-                    .shadow(color: isDarkMode ? .clear : Color.black.opacity(0.20), radius: 18, x: 0, y: 8)
-
-                    if discord.discordUsername != nil {
-                        Button { discord.disconnect() } label: {
-                            Text(discordDisconnectTitle)
-                                .font(.system(size: 16, weight: .semibold))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                        }
-                        .buttonStyle(.plain)
-                        .background(Color.red.opacity(0.15), in: Capsule())
-                        .foregroundStyle(.red)
-                    }
-
-                    if let status = discord.statusText {
-                        Text(status)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        Divider().overlay(Color.white.opacity(0.08)).padding(.leading, 62)
+                        SettingsGroupRowLabel(icon: "xmark.circle.fill", title: discordDisconnectTitle, showsChevron: false)
+                            .contentShape(Rectangle())
+                            .onTapGesture { discord.disconnect() }
                     }
                 }
+                .padding(.horizontal, 16)
+
+                if let status = discord.statusText {
+                    Text(status).font(.caption).foregroundStyle(.white.opacity(0.5)).padding(.horizontal, 20)
+                }
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 20)
+            .padding(.top, 20).padding(.bottom, 32)
         }
-        .background(isDarkMode ? Color.black : Color(.systemBackground))
+        .background(NodeHarmonyBackground(isDarkMode: true, accent: accent, intensity: 0.3).ignoresSafeArea())
         .navigationTitle(isEnglish ? "Other" : "Другое")
         .navigationBarTitleDisplayMode(.inline)
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -489,93 +319,48 @@ struct SettingsCustomizationScreen: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if #available(iOS 26.0, *) {
-                    Button {
-                        pickerUIColor = UIColor(red: accentR, green: accentG, blue: accentB, alpha: 1)
-                        showColorPicker = true
-                    } label: {
-                        Text(pickTitle)
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .overlay(alignment: .leading) {
-                                ZStack {
-                                    Circle().fill(isDarkMode ? .white : accent)
-                                    Image(systemName: "paintpalette.fill")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundStyle(isDarkMode ? accent : .white)
-                                }
-                                .frame(width: 32, height: 32)
-                                .padding(.leading, 6)
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .glassEffect(.regular.tint(isDarkMode ? accent : .white).interactive(), in: Capsule())
-                    .foregroundStyle(isDarkMode ? .white : accent)
-                    .shadow(color: isDarkMode ? .clear : Color.black.opacity(0.20), radius: 18, x: 0, y: 8)
+            VStack(spacing: 16) {
+                SettingsGroupContainer(isDarkMode: isDarkMode) {
+                    SettingsGroupRowLabel(icon: "paintpalette.fill", title: pickTitle, showsChevron: false)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            pickerUIColor = UIColor(red: accentR, green: accentG, blue: accentB, alpha: 1)
+                            showColorPicker = true
+                        }
 
-                    Button {
-                        useCustomAccent = false
-                    } label: {
-                        Text(resetTitle)
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                    }
-                    .buttonStyle(.plain)
-                    .glassEffect(.regular.tint(isDarkMode ? accent : .white).interactive(), in: Capsule())
-                    .foregroundStyle(isDarkMode ? .white : accent)
-                } else {
-                    Button {
-                        pickerUIColor = UIColor(red: accentR, green: accentG, blue: accentB, alpha: 1)
-                        showColorPicker = true
-                    } label: {
-                        Text(pickTitle)
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .overlay(alignment: .leading) {
-                                ZStack {
-                                    Circle().fill(isDarkMode ? .white : accent)
-                                    Image(systemName: "paintpalette.fill")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundStyle(isDarkMode ? accent : .white)
-                                }
-                                .frame(width: 32, height: 32)
-                                .padding(.leading, 6)
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .background((isDarkMode ? accent : .white), in: Capsule())
-                    .foregroundStyle(isDarkMode ? .white : accent)
+                    Divider().overlay(Color.white.opacity(0.08)).padding(.leading, 62)
 
-                    Button { useCustomAccent = false } label: {
-                        Text(resetTitle)
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                    }
-                    .buttonStyle(.plain)
-                    .background((isDarkMode ? accent : .white), in: Capsule())
-                    .foregroundStyle(isDarkMode ? .white : accent)
-                }
-
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(accentPreviewFill)
-                    .frame(height: 44)
-                    .overlay {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle().fill(accentPreviewFill.opacity(0.2))
+                            Circle().fill(accentPreviewFill).frame(width: 16, height: 16)
+                        }
+                        .frame(width: 34, height: 34)
                         Text(isEnglish ? "Preview" : "Превью")
-                            .font(.subheadline.weight(.semibold))
+                            .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(.white)
+                        Spacer()
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(accentPreviewFill)
+                            .frame(width: 40, height: 40)
+                            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
                     }
+                    .padding(.horizontal, 16).padding(.vertical, 14)
+
+                    Divider().overlay(Color.white.opacity(0.08)).padding(.leading, 62)
+
+                    SettingsGroupRowLabel(icon: "arrow.counterclockwise", title: resetTitle, showsChevron: false)
+                        .contentShape(Rectangle())
+                        .onTapGesture { useCustomAccent = false }
+                }
+                .padding(.horizontal, 16)
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 20)
+            .padding(.top, 20).padding(.bottom, 32)
         }
-        .background(isDarkMode ? Color.black : Color(.systemBackground))
+        .background(NodeHarmonyBackground(isDarkMode: true, accent: accent, intensity: 0.3).ignoresSafeArea())
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .preferredColorScheme(.dark)
         .sheet(isPresented: $showColorPicker) {
             NavigationStack {
                 AppAccentUIColorPickerSheet(
@@ -587,19 +372,86 @@ struct SettingsCustomizationScreen: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button(cancelTitle) {
-                            showColorPicker = false
-                        }
+                        Button(cancelTitle) { showColorPicker = false }
                     }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button(doneTitle) {
-                            commitSelectedAccent()
-                            showColorPicker = false
-                        }
+                        Button(doneTitle) { commitSelectedAccent(); showColorPicker = false }
                     }
                 }
             }
             .presentationDetents([.large])
+        }
+    }
+}
+
+struct SettingsLanguageScreen: View {
+    let isDarkMode: Bool
+    let accent: Color
+
+    @AppStorage("appLanguageCode") private var appLanguageCode: String = "ru"
+    @AppStorage("isEnglish") private var isEnglishStorage: Bool = false
+
+    private var title: String { String(localized: "settings.language.title") }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                SettingsGroupContainer(isDarkMode: isDarkMode) {
+                    ForEach(Array(AppLanguageOption.allCases.enumerated()), id: \.element.rawValue) { idx, option in
+                        Button {
+                            appLanguageCode = option.rawValue
+                            isEnglishStorage = option == .en
+                        } label: {
+                            HStack(spacing: 14) {
+                                ZStack {
+                                    Circle().fill(NodeDesignStyle.tileColor(for: option.rawValue).opacity(0.16))
+                                    Text(String(option.rawValue.prefix(2).uppercased()))
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundStyle(NodeDesignStyle.tileColor(for: option.rawValue))
+                                }
+                                .frame(width: 34, height: 34)
+                                Text(option.localizedNameKey)
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                Spacer(minLength: 0)
+                                if appLanguageCode == option.rawValue {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 18, weight: .semibold))
+                                        .foregroundStyle(accent)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                        }
+                        .buttonStyle(.plain)
+                        if idx < AppLanguageOption.allCases.count - 1 {
+                            Divider().overlay(Color.white.opacity(0.08)).padding(.leading, 62)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .padding(.top, 20).padding(.bottom, 32)
+        }
+        .background(NodeHarmonyBackground(isDarkMode: true, accent: accent, intensity: 0.3).ignoresSafeArea())
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .preferredColorScheme(.dark)
+    }
+}
+
+private enum AppLanguageOption: String, CaseIterable {
+    case en
+    case ru
+    case fr
+    case de
+
+    var localizedNameKey: LocalizedStringKey {
+        switch self {
+        case .en: return "settings.language.english"
+        case .ru: return "settings.language.russian"
+        case .fr: return "settings.language.french"
+        case .de: return "settings.language.german"
         }
     }
 }

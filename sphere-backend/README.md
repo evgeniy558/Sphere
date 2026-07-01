@@ -60,3 +60,31 @@ If your build root is already `sphere-backend/`, use:
 You ran `npx wrangler deploy` from a directory without `wrangler.toml` and without a Worker
 entrypoint. Wrangler then tried to auto-detect a static assets directory and failed with:
 "Could not detect a directory containing static files".
+
+## Render deploy: database connection failed
+
+If deploy logs show:
+
+```text
+db connect: ping db: failed to connect to `user=postgres.<ref> database=postgres`:
+  ... pooler.supabase.com ... FATAL: (ENOTFOUND) tenant/user postgres.<ref> not found
+```
+
+the Docker image built successfully, but the service **crashes on startup** because
+`DATABASE_URL` points at a Supabase project that no longer exists (deleted, paused, or wrong ref).
+
+The iOS app uses Supabase project **`dsgjedfenefzcjatfacj`** (`AuthService.swift`). If Render
+still has a stale password or wrong pooler host, update it:
+
+1. Open [Supabase Dashboard](https://supabase.com/dashboard) → project **dsgjedfenefzcjatfacj**
+2. **Project Settings → Database → Connection string**
+3. Choose **Transaction pooler** (port **6543**) or **Session pooler** (port **5432**)
+4. Copy the URI (starts with `postgresql://postgres.dsgjedfenefzcjatfacj:…`)
+5. In [Render Dashboard](https://dashboard.render.com) → **sphere-api** → **Environment**
+6. Set **`DATABASE_URL`** to that URI → **Save, rebuild & deploy**
+
+Alternative: use Render Postgres from `render.yaml` (`sphere-db`) and wire
+`DATABASE_URL` via `fromDatabase` instead of Supabase. Remove any manual Supabase override
+in the Dashboard so the Blueprint link wins.
+
+After a successful deploy, `GET /health` should return `{"status":"ok"}` within ~30s.

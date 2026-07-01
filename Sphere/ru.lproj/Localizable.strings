@@ -1,0 +1,26 @@
+"settings.language.title" = "Язык";
+"settings.language.english" = "Английский";
+"settings.language.russian" = "Русский";
+"settings.language.french" = "Французский";
+"settings.language.german" = "Немецкий";
+
+"nodeplus.badge" = "✦ NODE+";
+"nodeplus.title" = "Супервозможности для музыки";
+"nodeplus.subtitle" = "Откройте все возможности Plus";
+"nodeplus.features.title" = "Всё в Node+";
+"nodeplus.buy" = "Купить";
+
+"nodeplus.plan.monthly" = "Месяц";
+"nodeplus.plan.yearly" = "Год";
+"nodeplus.plan.lifetime" = "Навсегда";
+
+"nodeplus.caption.monthly" = "Оплата ежемесячно";
+"nodeplus.caption.yearly" = "Оплата ежегодно";
+"nodeplus.caption.lifetime" = "Единоразовый платеж";
+
+"nodeplus.feature.offline" = "Скачивание треков офлайн";
+"nodeplus.feature.priority" = "Приоритетная поддержка";
+"nodeplus.feature.noads" = "Отключение рекламы";
+"nodeplus.feature.eq" = "Эквалайзер";
+"nodeplus.feature.karaoke" = "Режим караоке";
+"nodeplus.feature.lossless" = "Lossless-аудио";

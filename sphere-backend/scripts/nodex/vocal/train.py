@@ -15,8 +15,42 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
 
-from model import NodeXVocalNet, count_parameters
+from model import NodeXVocalNet, FREQ_BINS, count_parameters
 from dataset import MUSDB18Dataset
+
+
+class SyntheticVocalDataset(torch.utils.data.Dataset):
+    """Generates synthetic spectrogram pairs for training without MUSDB18.
+
+    Simulates a mix spectrogram and a vocal mask. Useful for validating
+    the full training pipeline and exporting a working ONNX model.
+    """
+
+    def __init__(self, size=500, time_frames=256):
+        self.size = size
+        self.time_frames = time_frames
+
+    def __len__(self):
+        return self.size
+
+    def __getitem__(self, idx):
+        # Simulate mix spectrogram: random noise + harmonic structure
+        t = torch.linspace(0, 1, self.time_frames).unsqueeze(0)  # (1, T)
+        f = torch.linspace(0, 1, FREQ_BINS).unsqueeze(1)          # (F, 1)
+        harmonic = 0.3 * torch.sin(2 * 3.14159 * 4 * f) * torch.cos(2 * 3.14159 * 2 * t)
+        noise = 0.1 * torch.randn(FREQ_BINS, self.time_frames)
+        mix = (harmonic + noise + 0.5).clamp(0, 1).unsqueeze(0)   # (1, F, T)
+
+        # Simulate vocal mask: concentrated in mid-frequencies (200-4000 Hz range)
+        center = FREQ_BINS // 4
+        width = FREQ_BINS // 6
+        gaussian = torch.exp(-((torch.arange(FREQ_BINS).float() - center) ** 2) / (2 * width ** 2))
+        vocal_mask = gaussian.unsqueeze(1).expand(-1, self.time_frames)
+        # Add time variation
+        vocal_mask = vocal_mask * (0.5 + 0.5 * torch.sin(2 * 3.14159 * 1.5 * t.squeeze()))
+        vocal_mask = vocal_mask.clamp(0, 1).unsqueeze(0)  # (1, F, T)
+
+        return mix.float(), vocal_mask.float()
 
 
 def train_epoch(model, loader, criterion, optimizer, device):
@@ -79,6 +113,8 @@ def main():
     parser.add_argument("--samples-per-epoch", type=int, default=2000)
     parser.add_argument("--quick-test", action="store_true",
                         help="Run 1 epoch with tiny dataset for smoke testing")
+    parser.add_argument("--synthetic", action="store_true",
+                        help="Use synthetic spectrogram data (no MUSDB18 needed)")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else
@@ -90,13 +126,18 @@ def main():
     print(f"Parameters: {count_parameters(model):,}")
 
     # Dataset
-    samples = 20 if args.quick_test else args.samples_per_epoch
-    dataset = MUSDB18Dataset(
-        root=args.musdb_root,
-        split="train",
-        samples_per_epoch=samples,
-        augment=not args.quick_test,
-    )
+    if args.synthetic:
+        print("Using synthetic spectrogram data for training...")
+        samples = 20 if args.quick_test else min(args.samples_per_epoch, 500)
+        dataset = SyntheticVocalDataset(samples)
+    else:
+        samples = 20 if args.quick_test else args.samples_per_epoch
+        dataset = MUSDB18Dataset(
+            root=args.musdb_root,
+            split="train",
+            samples_per_epoch=samples,
+            augment=not args.quick_test,
+        )
 
     # Split train/val (80/20)
     val_size = max(1, int(len(dataset) * 0.2))
@@ -112,7 +153,7 @@ def main():
     criterion = nn.L1Loss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-5)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", patience=5, factor=0.5, verbose=True,
+        optimizer, mode="min", patience=5, factor=0.5,
     )
 
     os.makedirs(args.output, exist_ok=True)

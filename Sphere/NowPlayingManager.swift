@@ -1,6 +1,6 @@
 //
 //  NowPlayingManager.swift
-//  Sphere
+//  Node
 //
 //  Control Center, Lock Screen, Dynamic Island (Now Playing info + remote commands).
 //
@@ -16,6 +16,7 @@ enum RemotePlaybackCommand: Equatable {
     case nextTrack
     case previousTrack
     case seek(position: TimeInterval)
+    case toggleFavorite
 }
 
 /// ObservableObject: при получении удалённой команды выставляет pendingCommand; view обрабатывает в .onChange.
@@ -44,6 +45,10 @@ final class RemotePlaybackObserver: ObservableObject {
                 self?.pendingCommand = .seek(position: pos)
             }
             .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .sphereRemoteToggleFavorite)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.pendingCommand = .toggleFavorite }
+            .store(in: &cancellables)
     }
 }
 
@@ -53,6 +58,7 @@ extension Notification.Name {
     static let sphereRemoteNextTrack = Notification.Name("SphereRemoteNextTrack")
     static let sphereRemotePreviousTrack = Notification.Name("SphereRemotePreviousTrack")
     static let sphereRemoteSeek = Notification.Name("SphereRemoteSeek")
+    static let sphereRemoteToggleFavorite = Notification.Name("SphereRemoteToggleFavorite")
 }
 
 /// Ключ в userInfo для позиции при seek: TimeInterval.
@@ -101,11 +107,11 @@ final class NowPlayingManager {
     }
 
     private func setupRemoteCommands() {
-        remote.playCommand.addTarget { [weak self] _ in
+        remote.playCommand.addTarget { _ in
             NotificationCenter.default.post(name: .sphereRemotePlayPause, object: nil)
             return .success
         }
-        remote.pauseCommand.addTarget { [weak self] _ in
+        remote.pauseCommand.addTarget { _ in
             NotificationCenter.default.post(name: .sphereRemotePlayPause, object: nil)
             return .success
         }
@@ -121,13 +127,19 @@ final class NowPlayingManager {
             NotificationCenter.default.post(name: .sphereRemotePreviousTrack, object: nil)
             return .success
         }
-        remote.changePlaybackPositionCommand.addTarget { [weak self] event in
+        remote.changePlaybackPositionCommand.addTarget { event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             NotificationCenter.default.post(
                 name: .sphereRemoteSeek,
                 object: nil,
                 userInfo: [sphereRemoteSeekPositionKey: event.positionTime]
             )
+            return .success
+        }
+        // Lock Screen «звезда» (SoundCloud) → у нас сердечко в избранное.
+        remote.likeCommand.isEnabled = true
+        remote.likeCommand.addTarget { _ in
+            NotificationCenter.default.post(name: .sphereRemoteToggleFavorite, object: nil)
             return .success
         }
     }
@@ -140,7 +152,8 @@ final class NowPlayingManager {
         currentTime: TimeInterval,
         isPlaying: Bool,
         artwork: UIImage?,
-        clipURL: URL? = nil
+        clipURL: URL? = nil,
+        isFavorite: Bool = false
     ) {
         var info = center.nowPlayingInfo ?? [String: Any]()
         info[MPMediaItemPropertyTitle] = title ?? ""
@@ -152,6 +165,7 @@ final class NowPlayingManager {
         let mpArtwork = MPMediaItemArtwork(boundsSize: imageToShow.size) { _ in imageToShow }
         info[MPMediaItemPropertyArtwork] = mpArtwork
         center.nowPlayingInfo = info
+        remote.likeCommand.isActive = isFavorite
 
         if let clipURL = clipURL {
             startAnimatedArtwork(for: clipURL)
@@ -202,5 +216,6 @@ final class NowPlayingManager {
     func clear() {
         stopAnimatedArtwork()
         center.nowPlayingInfo = nil
+        remote.likeCommand.isActive = false
     }
 }

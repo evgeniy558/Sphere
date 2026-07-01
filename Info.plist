@@ -5,7 +5,7 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDisplayName</key>
-	<string>Sphere</string>
+	<string>Node</string>
 	<key>CFBundleExecutable</key>
 	<string>Sphere</string>
 	<key>CFBundleIdentifier</key>
@@ -28,7 +28,7 @@
 		</dict>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>Sphere Play</string>
+			<string>Node Play</string>
 			<key>CFBundleURLRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
@@ -69,9 +69,9 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.music</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Sphere uses the camera to scan QR codes for approving login on another device.</string>
+	<string>Node uses the camera to scan QR codes for approving login on another device.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Sphere uses the microphone for voice calls during listen-together sessions with friends.</string>
+	<string>Node uses the microphone for voice calls during listen-together sessions with friends.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
@@ -109,6 +109,8 @@
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<key>UIUserInterfaceStyle</key>
+	<string>Dark</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

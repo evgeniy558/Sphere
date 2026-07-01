@@ -96,6 +96,35 @@ final class DownloadsStore: ObservableObject {
         persistIndex()
     }
 
+    func isCollectionFullyDownloaded(tracks: [CatalogTrack]) -> Bool {
+        guard !tracks.isEmpty else { return false }
+        return tracks.allSatisfy { isDownloaded(provider: $0.provider, id: $0.id) }
+    }
+
+    func isCollectionDownloading(tracks: [CatalogTrack]) -> Bool {
+        tracks.contains { inProgress.contains(key(provider: $0.provider, id: $0.id)) }
+    }
+
+    func downloadManifest(_ items: [DownloadManifestItem]) async {
+        for item in items {
+            let track = CatalogTrack(
+                id: item.id,
+                provider: item.provider,
+                title: item.title,
+                artist: item.artist,
+                coverURL: item.coverURL,
+                duration: 0
+            )
+            try? await download(track: track)
+        }
+    }
+
+    func downloadAll(tracks: [CatalogTrack]) async {
+        for t in tracks {
+            try? await download(track: t)
+        }
+    }
+
     func delete(provider: String, id: String) {
         let k = key(provider: provider, id: id)
         guard let e = index[k] else { return }

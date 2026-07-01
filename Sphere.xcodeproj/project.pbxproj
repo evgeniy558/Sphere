@@ -10,9 +10,9 @@
 		7A79EC1B2F543B2D009062F6 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 7A79EC192F543B2D009062F6 /* GoogleSignIn */; };
 		7A79EC1C2F543B2D009062F6 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 7A79EC1A2F543B2D009062F6 /* Supabase */; };
 		7A79EC1F2F543B2D009062F6 /* ExyteChat in Frameworks */ = {isa = PBXBuildFile; productRef = 7A79EC1E2F543B2D009062F6 /* ExyteChat */; };
-		C1WEBRTC012F6A0000000001 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = C1WEBRTC022F6A0000000002 /* WebRTC */; };
 		7A79EC212F543B2D009062F6 /* SphereWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7A79EC202F543B2D009062F6 /* SphereWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B2SH002F543B2E009062F6 /* SphereShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B2SH001F543B2E009062F6 /* SphereShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C1WEBRTC012F6A0000000001 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = C1WEBRTC022F6A0000000002 /* WebRTC */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -241,6 +241,9 @@
 			knownRegions = (
 				en,
 				Base,
+				de,
+				ru,
+				fr,
 			);
 			mainGroup = 7A79EC002F543B2D009062F6;
 			minimizedProjectReferenceProxies = 1;

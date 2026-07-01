@@ -1,6 +1,6 @@
 //
 //  DeveloperMenu_SphereExport.swift
-//  Экспорт из Sphere (ContentView.swift) — окно «Разработка» (5 тапов по вкладке Настройки).
+//  Экспорт из Node (ContentView.swift) — окно «Разработка» (5 тапов по вкладке Настройки).
 //  Добавьте файл в таргет приложения. Нужны: AccentColor в ассетах, iOS 16+.
 //
 

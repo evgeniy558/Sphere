@@ -1,6 +1,6 @@
 //
 //  ContentView.swift
-//  Sphere
+//  Node
 //
 //  Created by Evgeniy on 01.03.2026.
 //
@@ -30,8 +30,8 @@ private func sphereAccentResolvedColor() -> Color {
         let b = d.object(forKey: "sphereAccentB") as? Double ?? 1.0
         return Color(red: r, green: g, blue: b)
     }
-    // Default app accent (we keep customization via Settings, but default is mint).
-    return Color.mint
+    // Default app accent (customization in Settings still works).
+    return Color.white
 }
 
 private var sphereAccent: Color { sphereAccentResolvedColor() }
@@ -328,7 +328,7 @@ private func heroMiniFallbackFrame(overlayGlobal: CGRect, playerStyleIndex: Int 
             height: miniSize
         )
     } else {
-        // iOS 16–18: ровно как в Sphere16 — один бар, центр миниплеера на фиксированной высоте.
+        // iOS 16–18: ровно как в Node16 — один бар, центр миниплеера на фиксированной высоте.
         let barCenterFromBottom: CGFloat = 143
         return CGRect(
             x: overlayGlobal.minX + barLeftInset,
@@ -339,13 +339,9 @@ private func heroMiniFallbackFrame(overlayGlobal: CGRect, playerStyleIndex: Int 
     }
 }
 
-/// Вычисляет тёмную тему из AppStorage + colorScheme.
+/// Node is dark-theme only — the light/system options are retired.
 private func appDarkThemeFromStorage(preferredRaw: String, colorScheme: ColorScheme) -> Bool {
-    switch preferredRaw {
-    case "dark": return true
-    case "light": return false
-    default: return colorScheme == .dark
-    }
+    true
 }
 
 /// Одна обложка для hero-анимации. Рисуется в одном размере; снаружи анимируют только scale и position (фиолет и картинка в sync).
@@ -697,7 +693,7 @@ private struct HeroCoverOverlayView: View {
     }
 }
 
-/// Герой при открытом sheet на iOS 26 (стили 2 и 3): при открытии мини-обложка влетает в большую; при закрытии уменьшается и влетает в мини-плеер. Как в бэкапе Sphere20.
+/// Герой при открытом sheet на iOS 26 (стили 2 и 3): при открытии мини-обложка влетает в большую; при закрытии уменьшается и влетает в мини-плеер. Как в бэкапе Node20.
 @available(iOS 26.0, *)
 private struct HeroCoverOverlayContentIOS26: View {
     let miniFrame: CGRect
@@ -862,7 +858,7 @@ private struct MiniPlayerCoverViewIOS26: View {
                             .scaledToFill()
                             .frame(width: 40, height: 40)
                             .clipShape(RoundedRectangle(cornerRadius: cr))
-                    } else if let urlStr = catalogCoverURL, let url = URL(string: urlStr) {
+                    } else if let url = catalogRemoteImageURL(catalogCoverURL) {
                         AsyncImage(url: url) { phase in
                             switch phase {
                             case .success(let img):
@@ -936,6 +932,7 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("preferredColorScheme") private var preferredColorSchemeRaw: String = ""
     @AppStorage("isEnglish") private var isEnglish = false
+    @AppStorage("appLanguageCode") private var appLanguageCode: String = "ru"
     /// После нажатия «Создать» в создании аккаунта — показываем главный экран приложения
     @AppStorage("isInApp") private var isInApp: Bool = false
     /// Фиксированный размер начального экрана (без клавиатуры), чтобы он не смещался при открытой клавиатуре в sheet
@@ -943,16 +940,9 @@ struct ContentView: View {
     /// Наблюдаем за сервисом авторизации, чтобы автоматически входить, если сессия уже восстановлена.
     @StateObject private var authService = AuthService.shared
 
-    /// Тема: по системе (""), светлая ("light"), тёмная ("dark")
-    private var colorSchemeOverride: ColorScheme? {
-        switch preferredColorSchemeRaw {
-        case "dark": return .dark
-        case "light": return .light
-        default: return nil
-        }
-    }
-    /// Тема: по системе, если override == nil; иначе принудительно светлая или тёмная
-    private var isDarkMode: Bool { (colorSchemeOverride ?? colorScheme) == .dark }
+    /// Node — только тёмная тема.
+    private var colorSchemeOverride: ColorScheme? { .dark }
+    private var isDarkMode: Bool { true }
 
     private func toggleTheme() {
         withAnimation(.easeInOut(duration: 0.35)) {
@@ -1046,6 +1036,18 @@ struct ContentView: View {
         }
         .ignoresSafeArea(.keyboard)
         .preferredColorScheme(colorSchemeOverride)
+        .environment(\.locale, Locale(identifier: appLanguageCode))
+        .onAppear {
+            let normalized = appLanguageCode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if normalized.isEmpty {
+                appLanguageCode = isEnglish ? "en" : "ru"
+            } else {
+                isEnglish = normalized == "en"
+            }
+        }
+        .onChange(of: appLanguageCode) { code in
+            isEnglish = code.lowercased() == "en"
+        }
         .onOpenURL { url in
             guard url.scheme == "sphere" else { return }
             if url.host == "import-shared" {
@@ -1144,8 +1146,9 @@ private final class AuthLoginBackgroundVideoUIView: UIView {
 enum MainAppTab: Int, CaseIterable {
     case home = 0
     case favorites = 1
-    case profile = 2
-    case search = 3
+    case create = 2
+    case profile = 3
+    case search = 4
 }
 
 /// Tab bar в стиле Telegram: капля с блюром (только iOS 18 и ниже; на iOS 26 не показывается).
@@ -1628,9 +1631,51 @@ private struct MainAppView: View {
     }
 
     @State private var selectedTab: MainAppTab = .home
-    /// 0 = главная, 1 = избранное, 2 = профиль, 3 = поиск; синхронизируется с `selectedTab`.
+    /// 0 = главная, 1 = библиотека, 2 = поиск; синхронизируется с `selectedTab`.
     @State private var pageScrollOffset: CGFloat = 0
+
+    private func tabPageIndex(for tab: MainAppTab) -> CGFloat {
+        switch tab {
+        case .home: return 0
+        case .favorites: return 1
+        case .search: return 2
+        case .create, .profile:
+            return tabPageIndex(for: lastNonCreateTab)
+        }
+    }
+
+    private func registerHomeAvatarTap(openProfile: @escaping () -> Void) {
+        homeAvatarTapCount += 1
+        homeAvatarTapReset?.cancel()
+        if homeAvatarTapCount >= 5 {
+            homeAvatarTapCount = 0
+            showDeveloperMenu = true
+            return
+        }
+        let tapGeneration = homeAvatarTapCount
+        homeAvatarTapReset = Task {
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                if homeAvatarTapCount == tapGeneration, tapGeneration == 1 {
+                    openProfile()
+                }
+                homeAvatarTapCount = 0
+            }
+        }
+    }
     @State private var showLikedPlaylist = false
+    @State private var showProfileSheet = false
+    @State private var showNodePlusSheet = false
+    @State private var showLibraryDownloads = false
+    @State private var showDiscoverSwipe = false
+    @State private var libraryGroupPlaylists: [GroupPlaylist] = []
+    @State private var libraryPlaylistCoverURLs: [String: [String]] = [:]
+    @State private var libraryPlaylistDetails: [String: GroupPlaylistDetail] = [:]
+    @State private var isLoadingLibraryPlaylists = false
+    @State private var presentedLibraryGroupPlaylist: GroupPlaylist?
+    @State private var homeAvatarTapCount = 0
+    @State private var homeAvatarTapReset: Task<Void, Never>?
     @State private var profileAvatarUIImage: UIImage?
     @State private var tracks: [AppTrack] = []
     @State private var currentTrack: AppTrack?
@@ -1656,6 +1701,7 @@ private struct MainAppView: View {
     @State private var currentCoverAccent: Color?
     @State private var coverImageCache: [UUID: UIImage] = [:]
     @State private var coverAccentCache: [UUID: Color] = [:]
+    @State private var catalogCoverImageTask: Task<Void, Never>?
     @State private var volumeSyncTimer: Timer?
     @State private var playReadyCancellable: AnyCancellable?
     @State private var playReadyTimeoutWorkItem: DispatchWorkItem?
@@ -1667,6 +1713,7 @@ private struct MainAppView: View {
     @State private var expandingOverlayDragOffset: CGFloat = 0
     @StateObject private var remotePlaybackObserver = RemotePlaybackObserver()
     @StateObject private var audioRouteObserver = AudioRouteObserver()
+    @StateObject private var homeBeatPulseDriver = MusicBeatPulseDriver()
     @State private var showDeveloperMenu = false
     @State private var showSettingsAvatarPicker = false
     @State private var settingsAvatarColorIndex = 0
@@ -1749,6 +1796,7 @@ private struct MainAppView: View {
     @State private var userSearchDebounce: Task<Void, Never>?
 	    @State private var searchProviderFilter: String = "all"
 	    @State private var presentedArtist: ArtistSheetItem?
+	    @State private var presentedArtistPopup: ArtistSheetItem?
 	    @State private var presentedAlbum: CatalogAlbum?
 	    @State private var isLoadingAlbum = false
 	    @State private var isLoadingArtist = false
@@ -1757,7 +1805,25 @@ private struct MainAppView: View {
     @State private var catalogQueueIndex: Int = 0
     @State private var recommendations: RecommendationsResponse?
     @State private var isLoadingRecommendations = false
+    @State private var hasCompletedInitialRecommendationsLoad = false
+    @State private var dailyMixes: [DailyMix] = []
+    @State private var presentedDailyMix: DailyMix?
+    @State private var isLoadingDailyMixes = false
+    @State private var hasCompletedInitialDailyMixesLoad = false
+    @State private var waveSessionID: String?
+    @State private var isWaveActive = false
+    @State private var showPlusMenu = false
+    @State private var lastNonCreateTab: MainAppTab = .home
+    @State private var plusHubAction: PlusHubAction?
+    @State private var isKaraokeActive = false
+    @State private var isKaraokePreparing = false
+    @State private var presentedCatalogPlaylist: CatalogPlaylist?
+    @State private var isLoadingCatalogPlaylist = false
     @State private var showOnboarding = false
+
+    private var isHomeBootstrapLoading: Bool {
+        apiClient.isAuthenticated && (!hasCompletedInitialRecommendationsLoad || !hasCompletedInitialDailyMixesLoad)
+    }
 
 	    private func openAlbum(_ album: CatalogAlbum) {
 	        presentedAlbum = album
@@ -1783,22 +1849,28 @@ private struct MainAppView: View {
 	        }
 	    }
 
-    private func openArtistByName(_ name: String) {
+    /// Opens an artist profile. From the player we present a popup sheet;
+    /// everywhere else it's a full-screen page (`asPopup: false`).
+    private func openArtistByName(_ name: String, asPopup: Bool = false) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let key = ArtistSheetItem.stableKey(forArtistName: trimmed)
         let placeholder = CatalogArtist(placeholder: trimmed)
-        presentedArtist = ArtistSheetItem(name: trimmed, artist: placeholder)
+        let item = ArtistSheetItem(name: trimmed, artist: placeholder)
+        if asPopup { presentedArtistPopup = item } else { presentedArtist = item }
         Task {
             do {
                 let artist = try await apiClient.getArtistUnified(name: trimmed)
                 await MainActor.run {
-                    if presentedArtist?.id == key {
-                        presentedArtist = ArtistSheetItem(name: trimmed, artist: artist)
+                    let resolved = ArtistSheetItem(name: trimmed, artist: artist)
+                    if asPopup {
+                        if presentedArtistPopup?.id == key { presentedArtistPopup = resolved }
+                    } else {
+                        if presentedArtist?.id == key { presentedArtist = resolved }
                     }
                 }
             } catch {
-                print("[Sphere] load artist error:", error.localizedDescription)
+                print("[Node] load artist error:", error.localizedDescription)
             }
         }
     }
@@ -1822,14 +1894,14 @@ private struct MainAppView: View {
             do {
                 let prov = searchProviderFilter == "all" ? nil : searchProviderFilter
                 let results = try await apiClient.search(query: trimmed, provider: prov, limit: 15)
-                print("[Sphere] catalog search '\(trimmed)' → \(results.tracks.count) tracks, \(results.albums.count) albums, \(results.artists.count) artists")
+                print("[Node] catalog search '\(trimmed)' → \(results.tracks.count) tracks, \(results.albums.count) albums, \(results.artists.count) artists")
                 await MainActor.run {
                     catalogSearchResults = results
                     catalogSearchError = nil
                     isCatalogSearching = false
                 }
             } catch {
-                print("[Sphere] catalog search error: \(error.localizedDescription)")
+                print("[Node] catalog search error: \(error.localizedDescription)")
                 await MainActor.run {
                     catalogSearchError = error.localizedDescription
                     isCatalogSearching = false
@@ -1869,6 +1941,29 @@ private struct MainAppView: View {
         }
     }
 
+    /// Resolves a playable URL: local download → resolved `/stream` CDN/HLS → `/audio` byte proxy on the backend.
+    private func resolveCatalogPlaybackURL(for track: CatalogTrack, preferProxy: Bool = false) async throws -> URL {
+        if let local = DownloadsStore.shared.localFileURL(provider: track.provider, id: track.id) {
+            return local
+        }
+        let lossless = UserDefaults.standard.bool(forKey: "sphereStreamLossless")
+        if preferProxy || CatalogPlayback.requiresBackendAudioProxy(provider: track.provider) {
+            guard let proxy = CatalogPlayback.proxyAudioURL(baseURL: apiClient.baseURL, track: track, lossless: lossless) else {
+                throw URLError(.badURL)
+            }
+            return proxy
+        }
+        if let stream = try? await apiClient.getStreamURL(provider: track.provider, id: track.id),
+           let streamURL = URL(string: stream),
+           CatalogPlayback.isDirectPlayableURL(streamURL) {
+            return streamURL
+        }
+        guard let proxy = CatalogPlayback.proxyAudioURL(baseURL: apiClient.baseURL, track: track, lossless: lossless) else {
+            throw URLError(.badURL)
+        }
+        return proxy
+    }
+
     private func playCatalogTrack(_ track: CatalogTrack, queue: [CatalogTrack]? = nil, queueIndex: Int? = nil) {
         if let queue, let idx = queueIndex {
             catalogQueue = queue
@@ -1881,94 +1976,15 @@ private struct MainAppView: View {
             catalogQueueIndex = 0
         }
         Task {
+            await apiClient.wakeBackend()
             do {
-                let proxyBase = apiClient.baseURL
-                let escapedProvider = track.provider.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? track.provider
-                let escapedId = track.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? track.id
-
-                let url: URL
-                if let local = DownloadsStore.shared.localFileURL(provider: track.provider, id: track.id) {
-                    url = local
-                } else {
-                    let lossless = UserDefaults.standard.bool(forKey: "sphereStreamLossless")
-                    let qualitySuffix = lossless ? "?quality=flac" : ""
-                    let proxyURLString = "\(proxyBase)/tracks/\(escapedProvider)/\(escapedId)/audio\(qualitySuffix)"
-                    guard let u = URL(string: proxyURLString) else {
-                        await MainActor.run {
-                            playbackErrorMessage = isEnglish
-                                ? "This track is not available for streaming"
-                                : "Этот трек недоступен для воспроизведения"
-                        }
-                        return
-                    }
-                    url = u
-                }
-                guard !url.absoluteString.isEmpty else {
-                    await MainActor.run {
-                        playbackErrorMessage = isEnglish
-                            ? "This track is not available for streaming"
-                            : "Этот трек недоступен для воспроизведения"
-                    }
-                    return
-                }
-                print("[Sphere] streaming: \(url.absoluteString.prefix(120))")
+                let url = try await resolveCatalogPlaybackURL(for: track)
                 await MainActor.run {
-                    mediaPlayer?.pause()
-                    sphereEngine.stop()
-                    usingEngine = false
-                    playbackHolder.progress = 0
-                    playbackHolder.currentTime = 0
-                    playbackHolder.duration = 0
-                    let item = AVPlayerItem(url: url)
-                    item.preferredForwardBufferDuration = 8
-                    let player = AVPlayer(playerItem: item)
-                    mediaPlayer = player
-                    player.play()
-                    playbackHolder.isPlaying = true
-                    let holder = playbackHolder
-                    playbackHolder.statusObserver = item.observe(\.status, options: [.new]) { [weak player] item, _ in
-                        guard item.status == .readyToPlay, let player else { return }
-                        let dur = player.currentItem?.duration.seconds ?? 0
-                        if dur.isFinite && dur > 0 {
-                            DispatchQueue.main.async {
-                                holder.duration = dur
-                            }
-                        }
-                    }
-                    NotificationCenter.default.addObserver(forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main) { note in
-                        if let err = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error {
-                            print("[Sphere] playback failed:", err.localizedDescription)
-                        }
-                    }
-                    NotificationCenter.default.addObserver(forName: AVPlayerItem.newErrorLogEntryNotification, object: item, queue: .main) { _ in
-                        if let log = item.errorLog()?.events.last {
-                            print("[Sphere] AVPlayer error log:", log.errorComment ?? "", log.errorStatusCode)
-                        }
-                    }
-                    let tempTrack = AppTrack(
-                        id: UUID(),
-                        url: url,
-                        title: track.title,
-                        artist: track.artist,
-                        addedAt: Date()
-                    )
-                    currentTrack = tempTrack
-                    currentCatalogTrack = track
-                    playbackHolder.progress = 0
-                    isMiniPlayerHidden = false
-                    startProgressTimer()
-                    loadCoverAndAccent(for: tempTrack)
-                    RecentlyPlayedStore.shared.recordCatalog(
-                        provider: track.provider,
-                        providerId: track.id,
-                        title: track.title,
-                        artist: track.artist,
-                        coverURL: track.coverURL
-                    )
+                    startCatalogPlayback(url: url, catalogTrack: track, allowProxyRetry: true)
                 }
                 Task { try? await apiClient.recordHistory(track) }
             } catch {
-                print("[Sphere] play catalog track error:", error.localizedDescription)
+                print("[Node] play catalog track error:", error.localizedDescription)
                 await MainActor.run {
                     playbackErrorMessage = error.localizedDescription
                 }
@@ -1976,10 +1992,136 @@ private struct MainAppView: View {
         }
     }
 
+    /// Starts AVPlayer for a catalog track; waits for `.readyToPlay` and retries via `/audio` proxy on failure.
+    private func startCatalogPlayback(url: URL, catalogTrack: CatalogTrack, allowProxyRetry: Bool) {
+        stopProgressTimer()
+        sphereEngine.stop()
+        usingEngine = false
+        playbackHolder.progress = 0
+        playbackHolder.currentTime = 0
+        playbackHolder.duration = 0
+        playbackErrorMessage = nil
+        playbackHolder.isPlaying = false
+        mediaPlayer?.pause()
+        mediaPlayer?.replaceCurrentItem(with: nil)
+        playReadyCancellable?.cancel()
+        playReadyTimeoutWorkItem?.cancel()
+        playbackHolder.statusObserver?.invalidate()
+        playbackHolder.statusObserver = nil
+
+        try? AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
+
+        print("[Node] streaming: \(url.absoluteString.prefix(160))")
+
+        let item = AVPlayerItem(url: url)
+        item.preferredForwardBufferDuration = 12
+        let player = AVPlayer(playerItem: item)
+        player.volume = Float(volume)
+        mediaPlayer = player
+
+        let tempTrack = AppTrack(
+            id: UUID(),
+            url: url,
+            title: catalogTrack.title,
+            artist: catalogTrack.artist,
+            addedAt: Date()
+        )
+        currentTrack = tempTrack
+        currentCatalogTrack = catalogTrack
+        isMiniPlayerHidden = false
+        loadCoverAndAccent(for: tempTrack)
+        RecentlyPlayedStore.shared.recordCatalog(
+            provider: catalogTrack.provider,
+            providerId: catalogTrack.id,
+            title: catalogTrack.title,
+            artist: catalogTrack.artist,
+            coverURL: catalogTrack.coverURL
+        )
+
+        func beginPlayingIfReady() {
+            guard mediaPlayer?.currentItem === item else { return }
+            let dur = resolvedDuration(for: item)
+            if dur.isFinite, dur > 0 { playbackHolder.duration = dur }
+            player.play()
+            playbackHolder.isPlaying = true
+            startProgressTimer()
+            updateNowPlayingInfo()
+            playReadyCancellable?.cancel()
+            playReadyTimeoutWorkItem?.cancel()
+        }
+
+        playReadyCancellable = item.publisher(for: \.status)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak player] status in
+                guard mediaPlayer?.currentItem === item else { return }
+                switch status {
+                case .readyToPlay:
+                    beginPlayingIfReady()
+                case .failed:
+                    let raw = item.error?.localizedDescription ?? ""
+                    print("[Node] catalog playback failed:", raw, "url:", url.absoluteString.prefix(120))
+                    if let log = item.errorLog()?.events.last {
+                        print("[Node] AVPlayer error log:", log.errorComment ?? "", log.errorStatusCode)
+                    }
+                    playbackHolder.isPlaying = false
+                    stopProgressTimer()
+                    playReadyCancellable?.cancel()
+                    playReadyTimeoutWorkItem?.cancel()
+                    if allowProxyRetry, !url.absoluteString.contains("/audio") {
+                        Task {
+                            do {
+                                let proxy = try await resolveCatalogPlaybackURL(for: catalogTrack, preferProxy: true)
+                                await MainActor.run {
+                                    startCatalogPlayback(url: proxy, catalogTrack: catalogTrack, allowProxyRetry: false)
+                                }
+                            } catch {
+                                await MainActor.run {
+                                    playbackErrorMessage = isEnglish
+                                        ? "This track is not available for streaming"
+                                        : "Этот трек недоступен для воспроизведения"
+                                }
+                            }
+                        }
+                    } else {
+                        playbackErrorMessage = raw.isEmpty
+                            ? (isEnglish ? "Playback error" : "Ошибка воспроизведения")
+                            : raw
+                    }
+                default:
+                    break
+                }
+            }
+
+        let work = DispatchWorkItem {
+            DispatchQueue.main.async {
+                guard mediaPlayer?.currentItem === item, !playbackHolder.isPlaying else { return }
+                beginPlayingIfReady()
+            }
+        }
+        playReadyTimeoutWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: work)
+    }
+
+    private var isCatalogQueueActive: Bool {
+        currentCatalogTrack != nil && !catalogQueue.isEmpty
+    }
+
     private var hasNextTrack: Bool {
+        if isCatalogQueueActive {
+            return catalogQueue.count > 1
+        }
         let ordered = tracksInPlaybackOrderForQueue
-        guard let current = currentTrack, let index = ordered.firstIndex(of: current) else { return false }
-        return index < ordered.count - 1
+        guard currentTrack != nil else { return false }
+        return ordered.count > 1
+    }
+
+    private var hasPreviousTrack: Bool {
+        if isCatalogQueueActive {
+            return catalogQueue.count > 1
+        }
+        let ordered = tracksInPlaybackOrderForQueue
+        guard currentTrack != nil else { return false }
+        return ordered.count > 1
     }
 
     /// Для hero-обложки: iOS 26 стиль 1 — playerDragOffset; стили 2/3 при currentTrack — expandingOverlayDragOffset; iOS 16–18 — playerDragOffset.
@@ -1992,13 +2134,16 @@ private struct MainAppView: View {
         return playerDragOffset
     }
 
-    private var accent: Color { sphereAccentResolvedColor() }
+    /// Единый акцент приложения (по умолчанию белый, может быть задан через настройки).
+    private var accent: Color {
+        sphereAccentResolvedColor()
+    }
     @State private var showEqualizerSheet = false
     @State private var showLyricsSheet = false
     /// Тексты песен: ключ — trackId.uuidString, значение — текст
     @AppStorage("sphere_lyrics_data") private var lyricsDataStorage: Data = Data()
-    private var homeTitle: String { isEnglish ? "Home" : "Главная" }
-    private var favoritesTitle: String { isEnglish ? "Favorites" : "Избранное" }
+    private var homeTitle: String { isEnglish ? "Node" : "Главная" }
+    private var favoritesTitle: String { isEnglish ? "Library" : "Библиотека" }
     private var settingsTitle: String { isEnglish ? "Settings" : "Настройки" }
     private var logoutTitle: String { isEnglish ? "Log out" : "Выйти" }
     private var libraryTitle: String { isEnglish ? "Library" : "Библиотека" }
@@ -2016,6 +2161,7 @@ private struct MainAppView: View {
     private var themeTitle: String { isEnglish ? "Appearance" : "Оформление" }
     private var otherSettingsNavTitle: String { isEnglish ? "Other" : "Другое" }
     private var customizationNavTitle: String { isEnglish ? "Customization" : "Кастомизация" }
+    private var languageSettingsTitle: String { String(localized: "settings.language.title") }
     private var downloadedTracksTitle: String { isEnglish ? "Downloaded tracks" : "Скачанные треки" }
 
     /// Как `CreateAccountView.pickerColors` — та же сетка выбора аватарки.
@@ -2067,7 +2213,11 @@ private struct MainAppView: View {
     }
 
     private var mainBackground: Color {
-        colorScheme == .dark ? Color.black : Color(.systemBackground)
+        NodeDesignStyle.baseBackground(for: isDarkMode)
+    }
+
+    private var mainHarmonyBackground: some View {
+        NodeHarmonyBackground(isDarkMode: isDarkMode, accent: accent, intensity: 0.65)
     }
 
     private var isDarkMode: Bool { appDarkThemeFromStorage(preferredRaw: preferredColorSchemeRaw, colorScheme: colorScheme) }
@@ -2183,7 +2333,7 @@ private struct MainAppView: View {
         }
     }
 
-    /// Импорт после «Поделиться → Sphere»: файл лежит в App Group (`ShareInbox/…`).
+    /// Импорт после «Поделиться → Node»: файл лежит в App Group (`ShareInbox/…`).
     private func importSharedInboxFileIfNeeded() {
         guard !shareImportRunning else { return }
         guard let defaults = WidgetShared.sharedUserDefaults,
@@ -2447,6 +2597,20 @@ private struct MainAppView: View {
     /// true если текущий трек играет через SphereAudioEngine (с EQ), false — через AVPlayer (fallback)
     @State private var usingEngine = false
 
+    private func syncHomeBeatVisuals(isPlaying: Bool) {
+        if isPlaying {
+            AudioPlaybackLevelMonitor.attachEngine(sphereEngine) { level in
+                Task { @MainActor in
+                    homeBeatPulseDriver.pushLevel(level)
+                }
+            }
+            homeBeatPulseDriver.start()
+        } else {
+            homeBeatPulseDriver.stop()
+            AudioPlaybackLevelMonitor.detachEngine(sphereEngine)
+        }
+    }
+
     private func startPlayback(for track: AppTrack) {
         DispatchQueue.main.async {
             var didRecordPlayCountForThisSession = false
@@ -2520,7 +2684,7 @@ private struct MainAppView: View {
 
             func tryStartPlayback() {
                 guard self.mediaPlayer?.currentItem === item else { return }
-                let d = CMTimeGetSeconds(item.duration)
+                let d = resolvedDuration(for: item)
                 if d.isFinite && d > 0 { self.playbackHolder.duration = d }
                 if !didRecordPlayCountForThisSession {
                     didRecordPlayCountForThisSession = true
@@ -2575,6 +2739,21 @@ private struct MainAppView: View {
         }
     }
 
+    private func resolvedDuration(for item: AVPlayerItem?) -> TimeInterval {
+        guard let item else { return playbackHolder.duration }
+        let direct = item.duration.seconds
+        if direct.isFinite && direct > 0 {
+            return direct
+        }
+        if let range = item.seekableTimeRanges.last?.timeRangeValue {
+            let end = CMTimeGetSeconds(range.start) + CMTimeGetSeconds(range.duration)
+            if end.isFinite && end > 0 {
+                return end
+            }
+        }
+        return playbackHolder.duration
+    }
+
     private func togglePlayPause() {
         if usingEngine {
             if sphereEngine.isPlaying {
@@ -2609,6 +2788,14 @@ private struct MainAppView: View {
         }
 
         guard let player = mediaPlayer else {
+            if let catalog = currentCatalogTrack {
+                playCatalogTrack(
+                    catalog,
+                    queue: catalogQueue.isEmpty ? [catalog] : catalogQueue,
+                    queueIndex: catalogQueueIndex
+                )
+                return
+            }
             if let track = currentTrack {
                 startPlayback(for: track)
             }
@@ -2621,7 +2808,7 @@ private struct MainAppView: View {
             stopProgressTimer()
             DiscordRPC.shared.clearPresence()
         } else {
-            let dur = player.currentItem?.duration.seconds ?? 0
+            let dur = resolvedDuration(for: player.currentItem)
             let atEnd = dur > 0 && (player.currentTime().seconds >= dur - 0.01 || playbackHolder.progress >= 0.99)
             if atEnd {
                 if repeatMode == .playNext && hasNextTrack {
@@ -2646,40 +2833,47 @@ private struct MainAppView: View {
     }
 
     private func playPreviousTrack() {
-        if currentCatalogTrack != nil, !catalogQueue.isEmpty, catalogQueueIndex > 0 {
-            catalogQueueIndex -= 1
+        if isCatalogQueueActive {
+            guard !catalogQueue.isEmpty else { return }
+            if catalogQueueIndex <= 0 {
+                catalogQueueIndex = catalogQueue.count - 1
+            } else {
+                catalogQueueIndex -= 1
+            }
             playCatalogTrack(catalogQueue[catalogQueueIndex], queue: catalogQueue, queueIndex: catalogQueueIndex)
             return
         }
         let ordered = tracksInPlaybackOrderForQueue
         guard !ordered.isEmpty else { return }
-        guard let current = currentTrack,
-              let index = ordered.firstIndex(of: current),
-              index > 0 else { return }
-        let previous = ordered[index - 1]
+        guard let current = currentTrack, let index = ordered.firstIndex(of: current) else { return }
+        let previous = ordered[(index - 1 + ordered.count) % ordered.count]
         currentTrack = previous
         playbackHolder.progress = 0
         startPlayback(for: previous)
     }
 
     private func playNextTrack() {
-        if currentCatalogTrack != nil, !catalogQueue.isEmpty, catalogQueueIndex < catalogQueue.count - 1 {
-            catalogQueueIndex += 1
+        if isCatalogQueueActive {
+            guard !catalogQueue.isEmpty else { return }
+            catalogQueueIndex = (catalogQueueIndex + 1) % catalogQueue.count
             playCatalogTrack(catalogQueue[catalogQueueIndex], queue: catalogQueue, queueIndex: catalogQueueIndex)
             return
         }
         let ordered = tracksInPlaybackOrderForQueue
         guard !ordered.isEmpty else { return }
-        guard let current = currentTrack,
-              let index = ordered.firstIndex(of: current),
-              index < ordered.count - 1 else { return }
-        let next = ordered[index + 1]
+        guard let current = currentTrack, let index = ordered.firstIndex(of: current) else { return }
+        let next = ordered[(index + 1) % ordered.count]
         currentTrack = next
         playbackHolder.progress = 0
         startPlayback(for: next)
     }
 
     private func playTrackAtIndex(_ index: Int) {
+        if isCatalogQueueActive, catalogQueue.indices.contains(index) {
+            catalogQueueIndex = index
+            playCatalogTrack(catalogQueue[index], queue: catalogQueue, queueIndex: index)
+            return
+        }
         let ordered = tracksInPlaybackOrderForQueue
         guard ordered.indices.contains(index) else { return }
         let track = ordered[index]
@@ -2728,7 +2922,7 @@ private struct MainAppView: View {
 
     @State private var lastSeekTime: Date?
 
-    private static let seekTolerance = CMTime(seconds: 0.5, preferredTimescale: 600)
+    private static let seekTolerance = CMTime(seconds: 0.08, preferredTimescale: 600)
 
     private func seek(to progress: Double) {
         if usingEngine {
@@ -2738,7 +2932,7 @@ private struct MainAppView: View {
             let isRewindForRepeat = clamped >= 0.98 && repeatMode == .repeatOne
             if !isRewindForRepeat { lastSeekTime = Date() }
 
-            if clamped >= 0.98 {
+            if clamped >= 0.995 {
                 if repeatMode == .playNext && hasNextTrack { playNextTrack(); return }
                 if repeatMode == .repeatOne {
                     sphereEngine.seek(to: 0)
@@ -2768,16 +2962,16 @@ private struct MainAppView: View {
         }
 
         guard let player = mediaPlayer, let currentItem = player.currentItem else { return }
-        var dur = currentItem.duration.seconds
+        var dur = resolvedDuration(for: currentItem)
         if !dur.isFinite || dur <= 0 {
             dur = playbackHolder.duration
         }
         guard dur.isFinite, dur > 0 else { return }
         let clamped = min(max(progress, 0), 1)
-        let isRewindForRepeat = clamped >= 0.98 && repeatMode == .repeatOne
+        let isRewindForRepeat = clamped >= 0.995 && repeatMode == .repeatOne
         if !isRewindForRepeat { lastSeekTime = Date() }
 
-        if clamped >= 0.98 {
+        if clamped >= 0.995 {
             if repeatMode == .playNext && hasNextTrack {
                 playNextTrack()
                 return
@@ -2855,6 +3049,7 @@ private struct MainAppView: View {
                         playbackHolder.currentTime = newTime
                         playbackHolder.duration = dur
                         playbackHolder.progress = newProgress
+                        homeBeatPulseDriver.pushPlaybackTime(newTime)
                     }
                     if newTime >= dur - 0.01 {
                         if repeatMode == .playNext && hasNextTrack { playNextTrack(); return }
@@ -2879,7 +3074,7 @@ private struct MainAppView: View {
                 }
                 // AVPlayer fallback
                 guard let player = mediaPlayer else { return }
-                let dur = player.currentItem?.duration.seconds ?? 0
+                let dur = resolvedDuration(for: player.currentItem)
                 guard dur.isFinite, dur > 0 else { return }
                 updateNowPlayingInfo()
                 if player.timeControlStatus != .playing {
@@ -2912,6 +3107,7 @@ private struct MainAppView: View {
                     playbackHolder.currentTime = newTime
                     playbackHolder.duration = newDuration
                     playbackHolder.progress = newProgress
+                    homeBeatPulseDriver.pushPlaybackTime(newTime)
                 }
                 if newTime >= newDuration - 0.01 {
                     if repeatMode == .playNext && hasNextTrack {
@@ -2965,6 +3161,12 @@ private struct MainAppView: View {
             NowPlayingManager.shared.clear()
             return
         }
+        let isFav: Bool = {
+            if let c = currentCatalogTrack {
+                return favoritesStore.isFavorite(provider: c.provider, id: c.id)
+            }
+            return favoritesStore.isFavoriteLocal(uuid: track.id.uuidString)
+        }()
         NowPlayingManager.shared.update(
             title: track.title,
             artist: track.artist,
@@ -2972,7 +3174,8 @@ private struct MainAppView: View {
             currentTime: playbackHolder.currentTime,
             isPlaying: playbackHolder.isPlaying,
             artwork: currentCoverImage,
-            clipURL: currentCatalogTrack?.clipURL.flatMap { URL(string: $0) }
+            clipURL: currentCatalogTrack?.clipURL.flatMap { URL(string: $0) },
+            isFavorite: isFav
         )
     }
 
@@ -2994,15 +3197,17 @@ private struct MainAppView: View {
     }
 
     private func loadCoverAndAccent(for track: AppTrack) {
+        catalogCoverImageTask?.cancel()
         currentCoverImage = coverImageCache[track.id]
         currentCoverAccent = coverAccentCache[track.id]
 
         if let catalogTrack = currentCatalogTrack,
            let urlStr = catalogTrack.coverURL,
            let coverURL = URL(string: urlStr) {
-            Task {
+            catalogCoverImageTask = Task {
                 do {
                     let (data, _) = try await URLSession.shared.data(from: coverURL)
+                    if Task.isCancelled { return }
                     if let img = UIImage(data: data) {
                         let accentColor = dominantColor(from: img)
                         await MainActor.run {
@@ -3014,7 +3219,7 @@ private struct MainAppView: View {
                         }
                     }
                 } catch {
-                    print("[Sphere] cover download error:", error.localizedDescription)
+                    print("[Node] cover download error:", error.localizedDescription)
                 }
             }
             return
@@ -3078,44 +3283,74 @@ private struct MainAppView: View {
     }
 
     @available(iOS 26.0, *)
+    private var tabBarShouldMinimizeOnScroll: Bool {
+        currentTrack != nil && !isMiniPlayerHidden
+    }
+
+    @available(iOS 26.0, *)
+    private var showsTabBarBottomAccessory: Bool {
+        if isPlayerSheetPresented || isPlayerSheetClosing || playerExpandProgress >= 0.02 {
+            return false
+        }
+        guard currentTrack != nil, !isMiniPlayerHidden else { return false }
+        return true
+    }
+
+    private func handleTabSelectionChange(_ newValue: MainAppTab) {
+        if newValue == .create {
+            showPlusMenu = true
+            selectedTab = lastNonCreateTab
+            return
+        }
+        lastNonCreateTab = newValue
+        if newValue != .search {
+            homeSearchText = ""
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private var tabBarBottomAccessoryHost: some View {
+        TabBarBottomAccessoryContent(
+            showMiniPlayer: currentTrack != nil && !isMiniPlayerHidden,
+            track: currentTrack,
+            catalogTrack: currentCatalogTrack,
+            accent: accent,
+            playbackHolder: playbackHolder,
+            namespace: playerCoverNamespace,
+            playerStyleIndex: playerStyleIndex,
+            roundPlayerCover: enableRoundPlayerCover,
+            onPlayPause: togglePlayPause,
+            onTapMini: openPlayerSheet,
+            onArtistTap: { if let t = currentTrack { openArtistByName(t.displayArtist, asPopup: true) } }
+        )
+    }
+
+    @available(iOS 26.0, *)
     private var tabViewLiquidGlass: some View {
         TabView(selection: $selectedTab) {
             Tab(isEnglish ? "Home" : "Главная", systemImage: "house.fill", value: .home) {
                 homeTab
             }
-            Tab(isEnglish ? "Favorites" : "Избранное", systemImage: "heart.fill", value: .favorites) {
+            Tab(isEnglish ? "Library" : "Библиотека", systemImage: "books.vertical.fill", value: .favorites) {
                 favoritesTab
             }
-            Tab(value: .profile) {
-                settingsTab
+            Tab(value: .create) {
+                Color.clear
             } label: {
-                if let avatar = profileAvatarUIImage {
-                    Label {
-                        Text(authService.currentProfile?.nickname ?? (isEnglish ? "Profile" : "Профиль"))
-                    } icon: {
-                        Image(uiImage: avatar)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 28, height: 28)
-                            .clipShape(Circle())
-                    }
-                } else {
-                    Label(isEnglish ? "Profile" : "Профиль", systemImage: "person.fill")
-                }
+                Label(isEnglish ? "Create" : "Создать", systemImage: "plus")
             }
             Tab(isEnglish ? "Search" : "Поиск", systemImage: "magnifyingglass", value: .search, role: .search) {
                 searchTab
             }
         }
         .tabViewStyle(.sidebarAdaptable)
-        .tabBarMinimizeBehavior(.onScrollDown)
+        .modifier(TabBarMinimizeOnScrollModifier(enabled: tabBarShouldMinimizeOnScroll))
         .tint(accent)
-        .tabViewBottomAccessory {
-            EmptyView()
-        }
-        .onChange(of: selectedTab) { newValue in
-            if newValue != .search { homeSearchText = "" }
-        }
+        .modifier(TabBarBottomAccessoryModifier(
+            isEnabled: showsTabBarBottomAccessory,
+            content: { tabBarBottomAccessoryHost }
+        ))
+        .onChange(of: selectedTab) { handleTabSelectionChange($0) }
     }
 
     /// Анимация перелистывания: spring, чтобы на ProMotion шло до 120 fps.
@@ -3132,24 +3367,33 @@ private struct MainAppView: View {
                     .frame(width: w, height: geo.size.height)
                 favoritesTab
                     .frame(width: w, height: geo.size.height)
-                settingsTab
-                    .frame(width: w, height: geo.size.height)
                 searchTab
                     .frame(width: w, height: geo.size.height)
             }
-            .frame(width: w * 4, height: geo.size.height, alignment: .leading)
+            .frame(width: w * 3, height: geo.size.height, alignment: .leading)
             .offset(x: -pageScrollOffset * w)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
-            pageScrollOffset = CGFloat(selectedTab.rawValue)
+            pageScrollOffset = tabPageIndex(for: selectedTab)
         }
         .onChange(of: selectedTab) { newValue in
+            if newValue == .create {
+                showPlusMenu = true
+                selectedTab = lastNonCreateTab
+                return
+            }
+            if newValue == .profile {
+                showProfileSheet = true
+                selectedTab = lastNonCreateTab
+                return
+            }
+            lastNonCreateTab = newValue
             if newValue != .search {
                 homeSearchText = ""
             }
             withAnimation(Self.pageSnapAnimation) {
-                pageScrollOffset = CGFloat(newValue.rawValue)
+                pageScrollOffset = tabPageIndex(for: newValue)
             }
         }
     }
@@ -3160,18 +3404,18 @@ private struct MainAppView: View {
                 miniPlayer(for: currentTrack, namespace: playerCoverNamespace, playbackHolder: playbackHolder)
                 Spacer().frame(height: 6)
             }
+            ZStack(alignment: .bottom) {
             TabBarSwiftUI(
                 homeTitle: homeTitle,
                 favoritesTitle: favoritesTitle,
-                profileTitle: profileTitle,
-                searchTitle: homeSearchPlaceholder,
+                createTitle: isEnglish ? "Create" : "Создать",
                 accent: accent,
-                avatarImage: profileAvatarUIImage,
                 selectedTab: $selectedTab,
-                onSettingsFiveTaps: { showDeveloperMenu = true }
+                onCreateTap: { showPlusMenu = true }
             )
             .frame(height: 56)
             .padding(.bottom, 2)
+            }
         }
         .animation(.easeInOut(duration: 0.25), value: currentTrack != nil)
     }
@@ -3184,16 +3428,9 @@ private struct MainAppView: View {
                 .tag(MainAppTab.home)
             favoritesTab
                 .tag(MainAppTab.favorites)
-            settingsTab
-                .tag(MainAppTab.profile)
         }
         .background(mainBackground.ignoresSafeArea())
-        .background(TabBarDebugTapInjector(onSettingsFiveTaps: { showDeveloperMenu = true }))
-        .onChange(of: selectedTab) { newValue in
-            if newValue != .home {
-                homeSearchText = ""
-            }
-        }
+        .onChange(of: selectedTab) { handleTabSelectionChange($0) }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if playerStyleIndex == 0, let _ = currentTrack, !isPlayerSheetPresented, !isMiniPlayerHidden {
                 // Стиль 0 на iOS 26: мини-бар уже рисуется через ExpandingGlassPlayerOverlay (.overlay в mainBodyBase).
@@ -3479,7 +3716,7 @@ private struct MainAppView: View {
     @ViewBuilder
     private var playerSheetOverlayContent: some View {
         if #available(iOS 26.0, *) {
-            if let currentTrack {
+            if let currentTrack, playerExpandProgress > 0.001 || isPlayerSheetClosing {
 	                ExpandingGlassPlayerOverlay(
 	                    expandProgress: $playerExpandProgress,
 	                    fullPlayerDragOffset: $expandingOverlayDragOffset,
@@ -3494,6 +3731,7 @@ private struct MainAppView: View {
                     onPlayPause: togglePlayPause,
 	                    onDismissFull: {
 	                        isPlayerSheetClosing = true
+	                        isPlayerSheetPresented = false
 	                        withAnimation(Self.playerSheetAnimation) {
 	                            playerExpandProgress = 0
 	                            expandingOverlayDragOffset = 0
@@ -3515,6 +3753,7 @@ private struct MainAppView: View {
                                 volume: $volume,
 	                                onDismiss: {
 	                                    isPlayerSheetClosing = true
+	                                    isPlayerSheetPresented = false
 	                                    withAnimation(Self.playerSheetAnimation) {
 	                                        playerExpandProgress = 0
 	                                        expandingOverlayDragOffset = 0
@@ -3539,7 +3778,7 @@ private struct MainAppView: View {
                                 onHideTrackFromRecommendations: { addCurrentTrackToExcludedRecommendations() },
                                 onOpenEqualizer: { showEqualizerSheet = true },
                                 onLyricsTap: { showLyricsSheet = true },
-                                onArtistTap: { openArtistByName(currentTrack.displayArtist) },
+                                onArtistTap: { openArtistByName(currentTrack.displayArtist, asPopup: true) },
                                 isBottomSheet: true,
                                 tracks: tracksInPlaybackOrderForQueue,
                                 currentTrackIndex: tracksInPlaybackOrderForQueue.firstIndex(where: { $0.id == currentTrack.id }) ?? 0,
@@ -3596,7 +3835,10 @@ private struct MainAppView: View {
                                 },
                                 onLyricsTap: { showLyricsSheet = true },
                                 onListenTogether: { showListenTogetherInvite = true },
-                                onArtistTap: { openArtistByName(currentTrack.displayArtist) },
+                                isKaraokeActive: isKaraokeActive,
+                                isKaraokePreparing: isKaraokePreparing,
+                                onKaraokeTap: { toggleKaraoke() },
+                                onArtistTap: { openArtistByName(currentTrack.displayArtist, asPopup: true) },
                                 tracks: tracksInPlaybackOrderForQueue,
                                 currentTrackIndex: tracksInPlaybackOrderForQueue.firstIndex(where: { $0.id == currentTrack.id }) ?? 0,
                                 coverImages: tracksInPlaybackOrderForQueue.map { coverImageCache[$0.id] },
@@ -3617,6 +3859,111 @@ private struct MainAppView: View {
                         }
                     }
                 )
+            } else if isPlayerSheetPresented, let currentTrack, playerStyleIndex != 0 {
+            PlayerSheetView(
+                track: currentTrack,
+                catalogTrack: currentCatalogTrack,
+                accent: accent,
+                coverImage: currentCoverImage,
+                coverAccent: currentCoverAccent,
+                namespace: playerCoverNamespace,
+                isEnglish: isEnglish,
+                playbackHolder: playbackHolder,
+                audioRouteObserver: audioRouteObserver,
+                volume: $volume,
+                onDismiss: {
+                    if #available(iOS 26.0, *) {
+                        playerDragOffset = 0
+                        isPlayerSheetClosing = true
+                    } else {
+                        withAnimation(Self.playerSheetAnimation) {
+                            isPlayerSheetPresented = false
+                        }
+                    }
+                },
+                onTogglePlayPause: { togglePlayPause() },
+                onPrevious: { playPreviousTrack() },
+                onNext: { playNextTrack() },
+                onSeek: { seek(to: $0) },
+                onVolumeChange: { setVolume($0) },
+                repeatMode: repeatMode,
+                onRepeatModeChange: { repeatMode = $0 },
+                onRepeatCycle: {
+                    switch repeatMode {
+                    case .pauseAtEnd: repeatMode = .repeatOne
+                    case .repeatOne: repeatMode = .playNext
+                    case .playNext: repeatMode = .pauseAtEnd
+                    }
+                },
+                onDeleteTrackFromDevice: {
+                    removeTrack(currentTrack)
+                },
+                onHideTrackFromRecommendations: { addCurrentTrackToExcludedRecommendations() },
+                onOpenEqualizer: { showEqualizerSheet = true },
+                onShareCatalogTrack: { ct in
+                    shareCatalogTrack = ct
+                    showShareTrackSheet = true
+                },
+                onLyricsTap: { showLyricsSheet = true },
+                onListenTogether: { showListenTogetherInvite = true },
+                isKaraokeActive: isKaraokeActive,
+                isKaraokePreparing: isKaraokePreparing,
+                onKaraokeTap: { toggleKaraoke() },
+                onArtistTap: { openArtistByName(currentTrack.displayArtist, asPopup: true) },
+                tracks: tracksInPlaybackOrderForQueue,
+                currentTrackIndex: tracksInPlaybackOrderForQueue.firstIndex(where: { $0.id == currentTrack.id }) ?? 0,
+                coverImages: tracksInPlaybackOrderForQueue.map { coverImageCache[$0.id] },
+                onTrackSelected: { playTrackAtIndex($0) },
+                enableCoverPaging: enableCoverPaging,
+                enableCoverSeekAnimation: enableCoverSeekAnimation,
+                coverSeekWobbleOnSeek: coverSeekWobbleOnSeek,
+                coverSeekSpinOnSeek: coverSeekSpinOnSeek,
+                roundPlayerCover: enableRoundPlayerCover,
+                expandProgress: 1,
+                isBottomSheet: true,
+                playerStyleIndex: playerStyleIndex,
+                isSeeking: $isPlayerSeeking,
+                seekScrubIntensity: $seekScrubIntensity,
+                seekScrubDirection: $seekScrubDirection
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipShape(TopRoundedShape(radius: 24))
+            .shadow(color: .black.opacity(0.2), radius: 16, x: 0, y: -2)
+            .offset(y: playerDragOffset)
+            .gesture(
+                DragGesture(minimumDistance: 12)
+                    .onChanged { value in
+                        let h = value.translation.height
+                        let w = value.translation.width
+                        if h > 0, h >= abs(w) {
+                            playerDragOffset = h
+                        }
+                    }
+                    .onEnded { value in
+                        let dy = value.translation.height
+                        let predicted = value.predictedEndTranslation.height
+                        let threshold: CGFloat = 120
+                        let screenH = UIScreen.main.bounds.height
+                        if dy > threshold || predicted > threshold {
+                            withAnimation(Self.playerSheetAnimation) {
+                                playerDragOffset = screenH
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.38) {
+                                isPlayerSheetPresented = false
+                                playerDragOffset = 0
+                            }
+                        } else {
+                            withAnimation(Self.playerSheetAnimation) {
+                                playerDragOffset = 0
+                            }
+                        }
+                    }
+            )
+            .transition(.asymmetric(
+                insertion: .move(edge: .bottom).combined(with: .opacity),
+                removal: .opacity
+            ))
+            .ignoresSafeArea()
             }
         } else if playerStyleIndex == 1, let currentTrack {
             LegacyExpandingBlurOverlay(
@@ -3673,9 +4020,7 @@ private struct MainAppView: View {
                             case .playNext: repeatMode = .pauseAtEnd
                             }
                         },
-                        onDeleteTrackFromDevice: {
-                            removeTrack(currentTrack)
-                        },
+                        onDeleteTrackFromDevice: { removeTrack(currentTrack) },
                         onHideTrackFromRecommendations: { addCurrentTrackToExcludedRecommendations() },
                         onOpenEqualizer: { showEqualizerSheet = true },
                         onShareCatalogTrack: { ct in
@@ -3684,7 +4029,10 @@ private struct MainAppView: View {
                         },
                         onLyricsTap: { showLyricsSheet = true },
                         onListenTogether: { showListenTogetherInvite = true },
-                        onArtistTap: { openArtistByName(currentTrack.displayArtist) },
+                        isKaraokeActive: isKaraokeActive,
+                        isKaraokePreparing: isKaraokePreparing,
+                        onKaraokeTap: { toggleKaraoke() },
+                        onArtistTap: { openArtistByName(currentTrack.displayArtist, asPopup: true) },
                         tracks: tracksInPlaybackOrderForQueue,
                         currentTrackIndex: tracksInPlaybackOrderForQueue.firstIndex(where: { $0.id == currentTrack.id }) ?? 0,
                         coverImages: tracksInPlaybackOrderForQueue.map { coverImageCache[$0.id] },
@@ -3718,13 +4066,8 @@ private struct MainAppView: View {
                 audioRouteObserver: audioRouteObserver,
                 volume: $volume,
                 onDismiss: {
-                    if #available(iOS 26.0, *) {
-                        playerDragOffset = 0
-                        isPlayerSheetClosing = true
-                    } else {
-                        withAnimation(Self.playerSheetAnimation) {
-                            isPlayerSheetPresented = false
-                        }
+                    withAnimation(Self.playerSheetAnimation) {
+                        isPlayerSheetPresented = false
                     }
                 },
                 onTogglePlayPause: { togglePlayPause() },
@@ -3741,9 +4084,7 @@ private struct MainAppView: View {
                     case .playNext: repeatMode = .pauseAtEnd
                     }
                 },
-                onDeleteTrackFromDevice: {
-                    removeTrack(currentTrack)
-                },
+                onDeleteTrackFromDevice: { removeTrack(currentTrack) },
                 onHideTrackFromRecommendations: { addCurrentTrackToExcludedRecommendations() },
                 onOpenEqualizer: { showEqualizerSheet = true },
                 onShareCatalogTrack: { ct in
@@ -3752,7 +4093,10 @@ private struct MainAppView: View {
                 },
                 onLyricsTap: { showLyricsSheet = true },
                 onListenTogether: { showListenTogetherInvite = true },
-                onArtistTap: { openArtistByName(currentTrack.displayArtist) },
+                isKaraokeActive: isKaraokeActive,
+                isKaraokePreparing: isKaraokePreparing,
+                onKaraokeTap: { toggleKaraoke() },
+                onArtistTap: { openArtistByName(currentTrack.displayArtist, asPopup: true) },
                 tracks: tracksInPlaybackOrderForQueue,
                 currentTrackIndex: tracksInPlaybackOrderForQueue.firstIndex(where: { $0.id == currentTrack.id }) ?? 0,
                 coverImages: tracksInPlaybackOrderForQueue.map { coverImageCache[$0.id] },
@@ -3838,8 +4182,12 @@ private struct MainAppView: View {
                 }
                 restartProgressTimerIfNeeded()
             }
+            .onChange(of: playbackHolder.isPlaying) { playing in
+                syncHomeBeatVisuals(isPlaying: playing)
+            }
             .onChange(of: currentTrack) { newTrack in
                 guard let newTrack else {
+                    syncHomeBeatVisuals(isPlaying: false)
                     currentCoverImage = nil
                     currentCoverAccent = nil
                     NowPlayingManager.shared.clear()
@@ -3858,6 +4206,15 @@ private struct MainAppView: View {
                 case .nextTrack: if hasNextTrack { playNextTrack() }
                 case .previousTrack: playPreviousTrack()
                 case .seek(let position): seekToTime(position)
+                case .toggleFavorite:
+                    Task {
+                        if let c = currentCatalogTrack {
+                            await favoritesStore.toggle(track: c)
+                        } else if let t = currentTrack {
+                            await favoritesStore.toggleLocal(uuid: t.id.uuidString, title: t.displayTitle, artist: t.displayArtist)
+                        }
+                        updateNowPlayingInfo()
+                    }
                 }
             }
             .onAppear {
@@ -3961,12 +4318,18 @@ private struct MainAppView: View {
             importSharedInboxFileIfNeeded()
         }
         .task {
+            await apiClient.wakeBackend()
             await FavoritesStore.shared.reload()
             // JWT may not exist on first frame; onChange(authenticated) also loads recs.
             if apiClient.isAuthenticated {
+                await MainActor.run {
+                    hasCompletedInitialRecommendationsLoad = false
+                    hasCompletedInitialDailyMixesLoad = false
+                }
                 // Parallel: long /recommendations must not block onboarding prefs + sheet.
                 await withTaskGroup(of: Void.self) { g in
                     g.addTask { await self.loadRecommendations() }
+                    g.addTask { await self.loadDailyMixes() }
                     g.addTask { await self.checkOnboarding() }
                 }
             }
@@ -3975,11 +4338,19 @@ private struct MainAppView: View {
         .onChange(of: apiClient.isAuthenticated) { isAuthed in
             if isAuthed {
                 Task {
+                    await MainActor.run {
+                        hasCompletedInitialRecommendationsLoad = false
+                        hasCompletedInitialDailyMixesLoad = false
+                    }
                     await withTaskGroup(of: Void.self) { g in
                         g.addTask { await self.loadRecommendations() }
+                        g.addTask { await self.loadDailyMixes() }
                         g.addTask { await self.checkOnboarding() }
                     }
                 }
+            } else {
+                hasCompletedInitialRecommendationsLoad = false
+                hasCompletedInitialDailyMixesLoad = false
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .sphereShareImportRequested)) { _ in
@@ -3991,14 +4362,106 @@ private struct MainAppView: View {
         .onChange(of: authService.currentProfile?.avatarUrl) { _ in
             loadProfileAvatarImage()
         }
-        .sheet(item: $presentedArtist) { item in
+        .onChange(of: authService.isSignedIn) { signedIn in
+            if signedIn { loadProfileAvatarImage() }
+        }
+        .fullScreenCover(item: $presentedArtist) { item in
             ArtistProfileView(
                 artist: item.artist,
                 accent: accent,
                 isDarkMode: isDarkMode,
                 isEnglish: isEnglish,
-                onPlayTrack: { track, queue in playCatalogTrack(track, queue: queue) }
+                onPlayTrack: { track, queue in playCatalogTrack(track, queue: queue) },
+                onAlbumTap: { album in
+                    presentedArtist = nil
+                    openAlbum(album)
+                },
+                onRelatedArtistTap: { related in
+                    presentedArtist = nil
+                    openArtistByName(related.name)
+                }
             )
+            .preferredColorScheme(.dark)
+        }
+        .sheet(item: $presentedArtistPopup) { item in
+            ArtistProfileView(
+                artist: item.artist,
+                accent: accent,
+                isDarkMode: isDarkMode,
+                isEnglish: isEnglish,
+                onPlayTrack: { track, queue in playCatalogTrack(track, queue: queue) },
+                onAlbumTap: { album in
+                    presentedArtistPopup = nil
+                    openAlbum(album)
+                },
+                onRelatedArtistTap: { related in
+                    openArtistByName(related.name, asPopup: true)
+                }
+            )
+            .preferredColorScheme(.dark)
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showPlusMenu) {
+            PlusActionMenuSheet(isEnglish: isEnglish, accent: accent) { action in
+                plusHubAction = action
+            }
+        }
+        .sheet(item: $plusHubAction) { action in
+            plusHubDestination(for: action)
+        }
+        .sheet(item: $presentedDailyMix) { mix in
+            let mixIndex = (dailyMixes.firstIndex(where: { $0.id == mix.id }).map { $0 + 1 }) ?? 1
+            DailyMixDetailView(
+                mix: mix,
+                mixIndex: mixIndex,
+                accent: accent,
+                isDarkMode: isDarkMode,
+                isEnglish: isEnglish,
+                onPlayTrack: { track, queue in
+                    playCatalogTrack(track, queue: queue)
+                    presentedDailyMix = nil
+                },
+                onPlayAll: { queue in
+                    if let first = queue.first {
+                        playCatalogTrack(first, queue: queue)
+                        presentedDailyMix = nil
+                    }
+                },
+                onShuffle: { queue in
+                    let shuffled = queue.shuffled()
+                    if let first = shuffled.first {
+                        playCatalogTrack(first, queue: shuffled)
+                        presentedDailyMix = nil
+                    }
+                }
+            )
+        }
+        .sheet(item: $presentedCatalogPlaylist) { playlist in
+            PlaylistDetailView(
+                playlist: playlist,
+                accent: accent,
+                isDarkMode: isDarkMode,
+                isEnglish: isEnglish,
+                onPlayTrack: { track, queue in
+                    playCatalogTrack(track, queue: queue)
+                    presentedCatalogPlaylist = nil
+                },
+                onPlayAll: { queue in
+                    if let first = queue.first {
+                        playCatalogTrack(first, queue: queue)
+                        presentedCatalogPlaylist = nil
+                    }
+                },
+                onShuffle: { queue in
+                    let shuffled = queue.shuffled()
+                    if let first = shuffled.first {
+                        playCatalogTrack(first, queue: shuffled)
+                        presentedCatalogPlaylist = nil
+                    }
+                }
+            )
+            .presentationDetents([.large])
         }
         .fullScreenCover(isPresented: $showOnboarding) {
             OnboardingView(
@@ -4009,6 +4472,48 @@ private struct MainAppView: View {
                 showOnboarding = false
                 Task { await loadRecommendations() }
             }
+        }
+        .sheet(isPresented: $showProfileSheet) {
+            settingsTab
+                .overlay(alignment: .topTrailing) {
+                    Button {
+                        showProfileSheet = false
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 32, height: 32)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .padding(.top, 14)
+                    .padding(.trailing, 16)
+                }
+                .preferredColorScheme(.dark)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(isPresented: $showDiscoverSwipe) {
+            DiscoverSwipeView(
+                isEnglish: isEnglish,
+                isDarkMode: isDarkMode,
+                accent: accent,
+                seedTracks: recommendations?.tracks ?? [],
+                onPlay: { track, queue in
+                    showDiscoverSwipe = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        playCatalogTrack(track, queue: queue.isEmpty ? [track] : queue)
+                        openPlayerSheet()
+                    }
+                },
+                onLike: { track in
+                    Task {
+                        if !FavoritesStore.shared.isFavorite(provider: track.provider, id: track.id) {
+                            await FavoritesStore.shared.toggle(track: track)
+                        }
+                    }
+                },
+                onClose: { showDiscoverSwipe = false }
+            )
         }
     }
 
@@ -4210,23 +4715,159 @@ private struct MainAppView: View {
                 await MainActor.run {
                     recommendations = recs
                     isLoadingRecommendations = false
+                    hasCompletedInitialRecommendationsLoad = true
                 }
                 return
             } catch {
-                print("[Sphere] load recommendations error (attempt \(attempt + 1)):", error.localizedDescription)
+                print("[Node] load recommendations error (attempt \(attempt + 1)):", error.localizedDescription)
                 if attempt < 3 {
                     let sec = 2.0 * pow(2.0, Double(attempt))
                     try? await Task.sleep(nanoseconds: UInt64(sec * 1_000_000_000.0))
                     await apiClient.wakeBackendForColdStart(maxAttempts: 3)
                 } else {
-                    await MainActor.run { isLoadingRecommendations = false }
+                    await MainActor.run {
+                        isLoadingRecommendations = false
+                        hasCompletedInitialRecommendationsLoad = true
+                    }
                 }
+            }
+        }
+    }
+
+    private func loadDailyMixes() async {
+        guard apiClient.isAuthenticated else {
+            await MainActor.run {
+                dailyMixes = []
+                isLoadingDailyMixes = false
+                hasCompletedInitialDailyMixesLoad = true
+            }
+            return
+        }
+        await MainActor.run { isLoadingDailyMixes = true }
+        let mixes = (try? await apiClient.getDailyMixes()) ?? []
+        await MainActor.run {
+            dailyMixes = mixes
+            isLoadingDailyMixes = false
+            hasCompletedInitialDailyMixesLoad = true
+        }
+    }
+
+    @ViewBuilder
+    private func plusHubDestination(for action: PlusHubAction) -> some View {
+        switch action {
+        case .jam:
+            JamHubView(isEnglish: isEnglish, accent: accent)
+        case .blend:
+            BlendHubView(isEnglish: isEnglish, accent: accent)
+        case .playlist:
+            GroupPlaylistHubView(isEnglish: isEnglish, accent: accent)
+        case .groupPlaylist:
+            GroupPlaylistHubView(isEnglish: isEnglish, accent: accent)
+        case .upload:
+            UploadsHubView(isEnglish: isEnglish, accent: accent)
+        }
+    }
+
+    private func startMyWave() {
+        guard apiClient.isAuthenticated else { return }
+        Task {
+            // Wake Render cold start, then retry up to 3 times
+            await apiClient.wakeBackendForColdStart()
+            for attempt in 0..<3 {
+                do {
+                    let session = try await apiClient.waveStart()
+                    await MainActor.run {
+                        waveSessionID = session.session_id
+                        isWaveActive = true
+                    }
+                    let tracks = try await apiClient.waveNext(sessionID: session.session_id, count: 15)
+                    if let first = tracks.first {
+                        await MainActor.run {
+                            catalogQueue = tracks
+                            playCatalogTrack(first, queue: tracks)
+                        }
+                    }
+                    return // success
+                } catch {
+                    print("[Node] wave attempt \(attempt+1):", error.localizedDescription)
+                    if attempt < 2 { try? await Task.sleep(nanoseconds: 2_000_000_000) } // 2s backoff
+                }
+            }
+        }
+    }
+
+    private func toggleKaraoke() {
+        guard let track = currentCatalogTrack, apiClient.isAuthenticated else { return }
+        if isKaraokeActive {
+            isKaraokeActive = false
+            playCatalogTrack(track, queue: catalogQueue.isEmpty ? [track] : catalogQueue, queueIndex: catalogQueueIndex)
+            return
+        }
+        isKaraokePreparing = true
+        Task {
+            do {
+                try await apiClient.prepareKaraoke(provider: track.provider, id: track.id)
+                for _ in 0..<24 {
+                    let status = try await apiClient.pollKaraokeStatus(provider: track.provider, id: track.id)
+                    if status == "ready" {
+                        await MainActor.run {
+                            isKaraokeActive = true
+                            isKaraokePreparing = false
+                            playCatalogTrackKaraoke(track)
+                        }
+                        return
+                    }
+                    if status == "error" { break }
+                    try await Task.sleep(nanoseconds: 2_000_000_000)
+                }
+                await MainActor.run { isKaraokePreparing = false }
+            } catch {
+                await MainActor.run { isKaraokePreparing = false }
+                print("[Node] karaoke:", error.localizedDescription)
+            }
+        }
+    }
+
+    private func playCatalogTrackKaraoke(_ track: CatalogTrack) {
+        guard let streamURL = apiClient.karaokeStreamURL(provider: track.provider, id: track.id),
+              let token = UserDefaults.standard.string(forKey: "sphereBackendJWT") else { return }
+        let headers = ["Authorization": "Bearer \(token)"]
+        let asset = AVURLAsset(url: streamURL, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+        let item = AVPlayerItem(asset: asset)
+        mediaPlayer?.pause()
+        sphereEngine.stop()
+        usingEngine = false
+        let player = AVPlayer(playerItem: item)
+        mediaPlayer = player
+        player.play()
+        playbackHolder.isPlaying = true
+        currentCatalogTrack = track
+        startProgressTimer()
+    }
+
+    private func openCatalogPlaylist(_ playlist: CatalogPlaylist) {
+        presentedCatalogPlaylist = playlist
+        isLoadingCatalogPlaylist = true
+        Task {
+            do {
+                let full = try await apiClient.getPlaylist(provider: playlist.provider, id: playlist.id)
+                await MainActor.run {
+                    if presentedCatalogPlaylist?.id == playlist.id {
+                        presentedCatalogPlaylist = full
+                        isLoadingCatalogPlaylist = false
+                    }
+                }
+            } catch {
+                await MainActor.run { isLoadingCatalogPlaylist = false }
             }
         }
     }
 
     private func checkOnboarding() async {
         guard apiClient.isAuthenticated else { return }
+        // TEMP (testing): always show the guide + genre/track picker on every login.
+        await MainActor.run { showOnboarding = true }
+        return
         for attempt in 0..<5 {
             do {
                 let prefs = try await apiClient.getPreferences()
@@ -4241,7 +4882,7 @@ private struct MainAppView: View {
                 }
                 return
             } catch {
-                print("[Sphere] check onboarding error (attempt \(attempt + 1)):", error.localizedDescription)
+                print("[Node] check onboarding error (attempt \(attempt + 1)):", error.localizedDescription)
                 if attempt < 4 {
                     let sec = 1.5 * pow(1.8, Double(attempt))
                     try? await Task.sleep(nanoseconds: UInt64(sec * 1_000_000_000.0))
@@ -4252,6 +4893,31 @@ private struct MainAppView: View {
     }
 
 
+    private var homeProfileTopButton: some View {
+        Button {
+            registerHomeAvatarTap { showProfileSheet = true }
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(Color.black.opacity(0.28))
+                    .frame(width: 44, height: 44)
+                ProfileAvatarCoreView(
+                    profile: authService.currentProfile,
+                    side: 38,
+                    accent: accent
+                )
+                .clipShape(Circle())
+            }
+            .overlay {
+                Circle()
+                    .strokeBorder(Color.white.opacity(0.75), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(profileTitle)
+    }
+
     private var homeTab: some View {
         NavigationStack {
             ZStack(alignment: .top) {
@@ -4259,13 +4925,16 @@ private struct MainAppView: View {
                     let homeTopSafe = HomeStickySearchLayout.backingSafeTop(geometryReportedSafeTop: geo.safeAreaInsets.top)
                     ZStack(alignment: .top) {
                         ZStack {
-                            mainBackground
-                                .ignoresSafeArea()
+                            mainHarmonyBackground
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            if currentTrack != nil, playbackHolder.isPlaying {
-                                AnimatedCoverGradientBackground(accent: (currentCoverAccent ?? accent), isDarkMode: isDarkMode)
-                                    .ignoresSafeArea()
-                                    .transition(.opacity)
+                            if currentTrack != nil {
+                                AnimatedCoverGradientBackground(
+                                    accent: (currentCoverAccent ?? accent),
+                                    isDarkMode: isDarkMode,
+                                    beatPunch: playbackHolder.isPlaying ? homeBeatPulseDriver.punch : nil
+                                )
+                                .ignoresSafeArea()
+                                .transition(.opacity)
                             }
                         }
                         .zIndex(0)
@@ -4278,163 +4947,60 @@ private struct MainAppView: View {
                                         HomeVerticalScrollOffsetReader(
                                             offsetY: scrollBind,
                                             clampsVerticalOffsetToNonNegative: false,
-                                            prefersDisplayLinkWhileScrolling: true
+                                            prefersDisplayLinkWhileScrolling: false
                                         )
                                         .frame(width: 1, height: 1)
                                         .allowsHitTesting(false)
                                         .padding(.bottom, 16)
 
                                         Text(homeTitle)
-                                            .font(.title2.weight(.semibold))
-                                            .foregroundStyle(isDarkMode ? .white : accent)
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.top, homeTopSafe + 24)
+                                            .font(.system(size: 28, weight: .bold, design: .rounded))
+                                            .foregroundStyle(.white)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.top, homeTopSafe + 28)
+                                            .padding(.horizontal, 20)
 
                                         Color.clear
-                                            .frame(height: HomeStickySearchMetrics.stickyPlaceholderRowHeight)
+                                            .frame(height: 0)
                                             .frame(maxWidth: .infinity)
                                             .accessibilityHidden(true)
 
-                                        let homeSearchTrimmed = homeSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        let recommendationsRailsEmpty: Bool = {
-                                            guard let r = recommendations else { return true }
-                                            return r.tracks.isEmpty && r.albums.isEmpty && r.artists.isEmpty
-                                        }()
+                                        // Always show My Wave — never block it behind loading
+                                        MyWaveLaunchButton(
+                                            isEnglish: isEnglish,
+                                            isDarkMode: isDarkMode,
+                                            accent: accent,
+                                            isActive: isWaveActive,
+                                            action: { startMyWave() }
+                                        )
 
-                                        if homeSearchTrimmed.isEmpty {
-                                            ScrollView(.horizontal, showsIndicators: false) {
-                                                HStack(spacing: 10) {
-                                                    Text(isEnglish ? "All" : "Все")
-                                                        .font(.system(size: 14, weight: .semibold))
-                                                        .foregroundStyle(isDarkMode ? .black : .white)
-                                                        .padding(.horizontal, 14)
-                                                        .padding(.vertical, 9)
-                                                        .background(
-                                                            Capsule(style: .continuous)
-                                                                .fill(isDarkMode ? Color.white : Color.black)
-                                                        )
-
-                                                    ForEach([isEnglish ? "Music" : "Музыка", isEnglish ? "Podcasts" : "Подкасты", isEnglish ? "Audiobooks" : "Аудиокниги"], id: \.self) { t in
-                                                        Text(t)
-                                                            .font(.system(size: 14, weight: .semibold))
-                                                            .foregroundStyle(isDarkMode ? .white : .primary)
-                                                            .padding(.horizontal, 14)
-                                                            .padding(.vertical, 9)
-                                                            .background(
-                                                                Capsule(style: .continuous)
-                                                                    .fill(Color.white.opacity(isDarkMode ? 0.08 : 0.06))
-                                                            )
-                                                    }
-                                                }
-                                                .padding(.horizontal, 16)
-                                                .padding(.top, 14)
-                                                .padding(.bottom, 6)
-                                            }
-
-                                            let recentTiles = Array(recentStore.items.prefix(7))
-                                            LazyVGrid(
-                                                columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
-                                                spacing: 12
-                                            ) {
-                                                Button {
-                                                    selectedTab = .favorites
-                                                } label: {
-                                                    HStack(spacing: 12) {
-                                                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                                            .fill(
-                                                                LinearGradient(
-                                                                    colors: [Color.purple.opacity(0.95), Color.pink.opacity(0.65)],
-                                                                    startPoint: .topLeading,
-                                                                    endPoint: .bottomTrailing
-                                                                )
-                                                            )
-                                                            .frame(width: 44, height: 44)
-                                                            .overlay(
-                                                                Image(systemName: "heart.fill")
-                                                                    .font(.system(size: 18, weight: .semibold))
-                                                                    .foregroundStyle(.white)
-                                                            )
-                                                        VStack(alignment: .leading, spacing: 2) {
-                                                            Text(isEnglish ? "Liked" : "Мне нравится")
-                                                                .font(.system(size: 16, weight: .semibold))
-                                                                .foregroundStyle(isDarkMode ? .white : .primary)
-                                                                .lineLimit(1)
-                                                            Text(isEnglish ? "Playlist" : "Плейлист")
-                                                                .font(.system(size: 13))
-                                                                .foregroundStyle(.secondary)
-                                                                .lineLimit(1)
-                                                        }
-                                                        Spacer(minLength: 0)
-                                                    }
-                                                    .padding(.horizontal, 12)
-                                                    .padding(.vertical, 10)
-                                                    .background(
-                                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                                            .fill(isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.05))
-                                                    )
-                                                }
-                                                .buttonStyle(.plain)
-
-                                                ForEach(recentTiles) { item in
-                                                    Button {
-                                                        handleRecentTap(item)
-                                                    } label: {
-                                                        HStack(spacing: 12) {
-                                                            Group {
-                                                                if let urlString = item.coverURL, let url = URL(string: urlString) {
-                                                                    AsyncImage(url: url) { img in
-                                                                        img.resizable().scaledToFill()
-                                                                    } placeholder: {
-                                                                        Color(.systemGray5)
-                                                                    }
-                                                                } else {
-                                                                    Color(.systemGray5)
-                                                                        .overlay(Image(systemName: "music.note").foregroundStyle(.secondary))
-                                                                }
-                                                            }
-                                                            .frame(width: 44, height: 44)
-                                                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                                                            VStack(alignment: .leading, spacing: 2) {
-                                                                Text(item.title)
-                                                                    .font(.system(size: 15, weight: .semibold))
-                                                                    .foregroundStyle(isDarkMode ? .white : .primary)
-                                                                    .lineLimit(1)
-                                                                Text(item.artist)
-                                                                    .font(.system(size: 13))
-                                                                    .foregroundStyle(.secondary)
-                                                                    .lineLimit(1)
-                                                            }
-                                                            Spacer(minLength: 0)
-                                                        }
-                                                        .padding(.horizontal, 12)
-                                                        .padding(.vertical, 10)
-                                                        .background(
-                                                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                                                .fill(isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.05))
-                                                        )
-                                                    }
-                                                    .buttonStyle(.plain)
-                                                }
-                                            }
-                                            .padding(.horizontal, 16)
-                                            .padding(.top, 6)
-                                            .padding(.bottom, 14)
+                                        // Show mixes section — gracefully handle loading/empty
+                                        if apiClient.isAuthenticated && (!dailyMixes.isEmpty || isLoadingDailyMixes) {
+                                            DailyMixesHomeSection(
+                                                mixes: dailyMixes,
+                                                isEnglish: isEnglish,
+                                                isDarkMode: isDarkMode,
+                                                accent: accent,
+                                                onOpenMix: { presentedDailyMix = $0 }
+                                            )
+                                            .padding(.top, 4)
                                         }
 
-                                        if isLoadingRecommendations,
-                                           homeSearchTrimmed.isEmpty,
-                                           recommendationsRailsEmpty {
-                                            RecommendationsSkeletonView(isDarkMode: isDarkMode)
+                                        // Recommendations — show incrementally, never block
+                                        if isLoadingRecommendations && recommendations == nil {
+                                            // Subtle inline loading, not full-screen block
+                                            HStack { Spacer(); ProgressView().tint(.white.opacity(0.5)); Spacer() }
+                                                .padding(.vertical, 40)
                                         } else if let recs = recommendations,
-                                           homeSearchTrimmed.isEmpty,
-                                           (!recs.tracks.isEmpty || !recs.albums.isEmpty || !recs.artists.isEmpty) {
-                                            VStack(alignment: .leading, spacing: 12) {
+                                                  homeSearchTrimmed.isEmpty,
+                                                  (!recs.tracks.isEmpty || !recs.albums.isEmpty || !recs.artists.isEmpty) {
+                                            VStack(alignment: .leading, spacing: 28) {
                                                 if !recs.tracks.isEmpty {
                                                     Text(isEnglish ? "Recommended tracks" : "Рекомендованные треки")
-                                                        .font(.system(size: 18, weight: .semibold))
-                                                        .foregroundStyle(isDarkMode ? .white : accent)
-                                                        .padding(.leading, 18)
+                                                        .font(.system(size: 24, weight: .bold))
+                                                        .foregroundStyle(.white)
+                                                        .padding(.leading, 20)
+                                                        .padding(.top, 8)
                                                     ScrollView(.horizontal, showsIndicators: false) {
                                                         HStack(spacing: 12) {
                                                             ForEach(recs.tracks.prefix(15)) { track in
@@ -4455,9 +5021,10 @@ private struct MainAppView: View {
                                                 }
                                                 if !recs.albums.isEmpty {
                                                     Text(isEnglish ? "Recommended albums" : "Рекомендованные альбомы")
-                                                        .font(.system(size: 18, weight: .semibold))
-                                                        .foregroundStyle(isDarkMode ? .white : accent)
-                                                        .padding(.leading, 18)
+                                                        .font(.system(size: 24, weight: .bold))
+                                                        .foregroundStyle(.white)
+                                                        .padding(.leading, 20)
+                                                        .padding(.top, 8)
                                                     ScrollView(.horizontal, showsIndicators: false) {
                                                         HStack(spacing: 12) {
                                                             ForEach(recs.albums.prefix(10)) { album in
@@ -4469,9 +5036,10 @@ private struct MainAppView: View {
                                                 }
                                                 if !recs.artists.isEmpty {
                                                     Text(isEnglish ? "Recommended artists" : "Рекомендованные исполнители")
-                                                        .font(.system(size: 18, weight: .semibold))
-                                                        .foregroundStyle(isDarkMode ? .white : accent)
-                                                        .padding(.leading, 18)
+                                                        .font(.system(size: 24, weight: .bold))
+                                                        .foregroundStyle(.white)
+                                                        .padding(.leading, 20)
+                                                        .padding(.top, 8)
                                                     ScrollView(.horizontal, showsIndicators: false) {
                                                         HStack(spacing: 12) {
                                                             ForEach(recs.artists.prefix(10)) { artist in
@@ -4487,152 +5055,6 @@ private struct MainAppView: View {
                                             .padding(.bottom, 16)
                                         }
 
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            Text(libraryTitle)
-                                                .font(.system(size: 20, weight: .semibold))
-                                                .foregroundStyle(isDarkMode ? .white : accent)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                                .padding(.leading, 18)
-                                                .padding(.trailing, 12)
-
-                                            VStack(alignment: .leading, spacing: 0) {
-                                            let homeFiltered = homeSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                                ? tracks
-                                                : tracks.filter {
-                                                    $0.displayTitle.localizedCaseInsensitiveContains(homeSearchText.trimmingCharacters(in: .whitespacesAndNewlines))
-                                                    || $0.displayArtist.localizedCaseInsensitiveContains(homeSearchText.trimmingCharacters(in: .whitespacesAndNewlines))
-                                                }
-                                            let displayedTracks = homeFiltered.sorted {
-                                                ($0.addedAt ?? .distantPast) > ($1.addedAt ?? .distantPast)
-                                            }
-
-                                            if tracks.isEmpty {
-                                                HStack(alignment: .center, spacing: 12) {
-                                                    Text(libraryEmptyTitle)
-                                                        .font(.subheadline)
-                                                        .foregroundStyle(.secondary)
-                                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                                        .padding(.horizontal, 12)
-                                                    NavigationLink {
-                                                        FullLibraryFullScreenView(
-                                                            tracks: $tracks,
-                                                            accent: accent,
-                                                            colorScheme: colorScheme,
-                                                            isEnglish: isEnglish,
-                                                            onDelete: removeTrack,
-                                                            onPlayTrack: { track in
-                                                                currentTrack = track
-                                                                playbackHolder.progress = 0
-                                                                isMiniPlayerHidden = false
-                                                                startPlayback(for: track)
-                                                                openPlayerSheet()
-                                                            }
-                                                        )
-                                                    } label: {
-                                                        HomeLibraryOpenFullGridButtonLabel(accent: accent)
-                                                    }
-                                                    .buttonStyle(ScaleOnPressRoundButtonStyle())
-                                                }
-                                                .padding(.trailing, 12)
-                                            } else if displayedTracks.isEmpty && (catalogSearchResults?.tracks.isEmpty ?? true) {
-                                                HStack(alignment: .center, spacing: 12) {
-                                                    Text(noResultsTitle)
-                                                        .font(.subheadline)
-                                                        .foregroundStyle(.secondary)
-                                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                                        .padding(.horizontal, 12)
-                                                    NavigationLink {
-                                                        FullLibraryFullScreenView(
-                                                            tracks: $tracks,
-                                                            accent: accent,
-                                                            colorScheme: colorScheme,
-                                                            isEnglish: isEnglish,
-                                                            onDelete: removeTrack,
-                                                            onPlayTrack: { track in
-                                                                currentTrack = track
-                                                                playbackHolder.progress = 0
-                                                                isMiniPlayerHidden = false
-                                                                startPlayback(for: track)
-                                                                openPlayerSheet()
-                                                            }
-                                                        )
-                                                    } label: {
-                                                        HomeLibraryOpenFullGridButtonLabel(accent: accent)
-                                                    }
-                                                    .buttonStyle(ScaleOnPressRoundButtonStyle())
-                                                }
-                                                .padding(.trailing, 12)
-                                            } else {
-                                                let catalogTracksForRow: [CatalogTrack] = {
-                                                    guard !homeSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                                                          let res = catalogSearchResults else { return [] }
-                                                    return Array(res.tracks.prefix(20))
-                                                }()
-                                                HStack(alignment: .top, spacing: 12) {
-                                                    ScrollView(.horizontal, showsIndicators: false) {
-                                                        HStack(alignment: .top, spacing: 0) {
-                                                            Color.clear
-                                                                .frame(width: 12 + 4, height: HomeLibraryHorizontalRowMetrics.cellTotalHeight)
-                                                            HStack(alignment: .top, spacing: 16) {
-                                                                ForEach(displayedTracks) { track in
-                                                                    LibraryRowCell(
-                                                                        track: track,
-                                                                        accent: accent,
-                                                                        deleteTitle: deleteTitle,
-                                                                        onTap: {
-                                                                            currentTrack = track
-                                                                            playbackHolder.progress = 0
-                                                                            isMiniPlayerHidden = false
-                                                                            startPlayback(for: track)
-                                                                            openPlayerSheet()
-                                                                        },
-                                                                        onDelete: { removeTrack(id: track.id) }
-                                                                    )
-                                                                }
-                                                                ForEach(catalogTracksForRow) { ctrack in
-                                                                    CatalogLibraryRowCell(
-                                                                        track: ctrack,
-                                                                        accent: accent,
-                                                                        onTap: {
-                                                                            playCatalogTrack(ctrack, queue: catalogTracksForRow)
-                                                                            openPlayerSheet()
-                                                                        }
-                                                                    )
-                                                                }
-                                                            }
-                                                        }
-                                                        .padding(.trailing, 4)
-                                                    }
-                                                    .frame(maxWidth: .infinity)
-
-                                                    NavigationLink {
-                                                        FullLibraryFullScreenView(
-                                                            tracks: $tracks,
-                                                            accent: accent,
-                                                            colorScheme: colorScheme,
-                                                            isEnglish: isEnglish,
-                                                            onDelete: removeTrack,
-                                                            onPlayTrack: { track in
-                                                                currentTrack = track
-                                                                playbackHolder.progress = 0
-                                                                isMiniPlayerHidden = false
-                                                                startPlayback(for: track)
-                                                                openPlayerSheet()
-                                                            }
-                                                        )
-                                                    } label: {
-                                                        HomeLibraryOpenFullGridButtonLabel(accent: accent)
-                                                    }
-                                                    .buttonStyle(ScaleOnPressRoundButtonStyle())
-                                                }
-                                                .padding(.trailing, 12)
-                                            }
-                                            }
-                                            .padding(.top, 18)
-                                            .padding(.bottom, 18)
-                                            .frame(maxWidth: .infinity)
-                                        }
-
                                         Spacer(minLength: 0)
                                     }
                                     .modifier(HomeTabScrollStackTopSafePaddingPreiOS26())
@@ -4642,31 +5064,31 @@ private struct MainAppView: View {
                                     .frame(minHeight: geo.size.height + HomeStickySearchMetrics.latchScrollY + 24)
                                 }
                                 .scrollContentBackground(.hidden)
-                                .refreshable { await loadRecommendations() }
+                                .refreshable {
+                                    await loadRecommendations()
+                                    await loadDailyMixes()
+                                }
                             },
                             overlayChrome: { scrollY in
-                                HomeStickySearchOverlayChrome(
-                                    safeAreaTop: geo.safeAreaInsets.top,
-                                    geometryWidth: geo.size.width,
-                                    scroll: scrollY,
-                                    searchText: $homeSearchText,
-                                    placeholder: homeSearchPlaceholder,
-                                    accent: accent,
-                                    isDarkMode: isDarkMode
-                                )
+                                EmptyView()
                             }
                         )
                     }
                     .zIndex(1)
+                    if authService.isSignedIn {
+                        homeProfileTopButton
+                            .padding(.top, homeTopSafe + 20)
+                            .padding(.trailing, 16)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                            .zIndex(2)
+                    }
+
                 }
             }
             .ignoresSafeArea(edges: .top)
             .homeTabGeometryReaderPreIOS26()
             .toolbar(.hidden, for: .navigationBar)
             .toolbarBackground(.hidden, for: .navigationBar)
-            .onChange(of: homeSearchText) { newValue in
-                debouncedCatalogSearch(newValue)
-            }
         }
         .tabItem {
             Label {
@@ -4955,23 +5377,24 @@ private struct MainAppView: View {
         }
 
         private var searchField: some View {
-            Group {
-                if #available(iOS 26.0, *) {
-                    TextField(searchPlaceholder, text: $searchText)
-                        .textFieldStyle(.plain)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .frame(minHeight: 44)
-                        .glassEffect(.regular.interactive(), in: Capsule())
-                } else {
-                    TextField(searchPlaceholder, text: $searchText)
-                        .textFieldStyle(.plain)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .frame(minHeight: 44)
-                        .background(Material.regular, in: Capsule())
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle().fill(accent)
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
                 }
+                .frame(width: 28, height: 28)
+                TextField(searchPlaceholder, text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(minHeight: 44)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(NodeDesignStyle.glassStrokePrimary, lineWidth: 0.8))
         }
 
         @ViewBuilder
@@ -5326,174 +5749,134 @@ private struct MainAppView: View {
     }
 
     private var favoritesTab: some View {
-        ZStack {
-            mainBackground
-                .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                Text(favoritesTitle)
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(isDarkMode ? .white : accent)
-                    .frame(maxWidth: .infinity)
-                    .padding(.top, 24)
-                    .padding(.bottom, 16)
-
-                ScrollView(.vertical, showsIndicators: true) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Button {
-                            showLikedPlaylist = true
-                        } label: {
-                            HStack(spacing: 14) {
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [Color.purple.opacity(0.95), Color.pink.opacity(0.70)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                    .frame(width: 64, height: 64)
-                                    .overlay(
-                                        Image(systemName: "heart.fill")
-                                            .font(.system(size: 24, weight: .semibold))
-                                            .foregroundStyle(.white)
-                                    )
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(isEnglish ? "Liked" : "Мне нравится")
-                                        .font(.system(size: 20, weight: .semibold))
-                                        .foregroundStyle(isDarkMode ? .white : .primary)
-                                    let likedCount = favoritesStore.items.filter { $0.itemType == "track" }.count
-                                    Text(isEnglish ? "\(likedCount) tracks" : "\(likedCount) треков")
-                                        .font(.system(size: 14))
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer(minLength: 0)
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(.secondary)
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 12)
-                            .background(
-                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                    .fill(isDarkMode ? Color.white.opacity(0.08) : Color.black.opacity(0.05))
-                            )
-                        }
-                        .buttonStyle(.plain)
-
-                        let lastLikedTracks = Array(favoritesStore.items.filter { $0.itemType == "track" }.prefix(9))
-                        if !lastLikedTracks.isEmpty {
-                            Text(isEnglish ? "Recently added" : "Последние добавленные")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(isDarkMode ? .white : .primary)
-                                .padding(.horizontal, 2)
-
-                            let rows: [GridItem] = Array(repeating: GridItem(.fixed(92), spacing: 10), count: 3)
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                LazyHGrid(rows: rows, spacing: 10) {
-                                    ForEach(lastLikedTracks) { fav in
-                                        Button {
-                                            playFavorite(fav)
-                                        } label: {
-                                            VStack(alignment: .leading, spacing: 6) {
-                                                AsyncImage(url: catalogRemoteImageURL(fav.coverURL)) { phase in
-                                                    switch phase {
-                                                    case .success(let img):
-                                                        img.resizable().scaledToFill()
-                                                    default:
-                                                        Rectangle().fill(accent.opacity(0.18))
-                                                    }
-                                                }
-                                                .frame(width: 92, height: 92)
-                                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-                                                Text(fav.title)
-                                                    .font(.system(size: 12, weight: .semibold))
-                                                    .foregroundStyle(isDarkMode ? .white : .primary)
-                                                    .lineLimit(1)
-                                            }
-                                            .frame(width: 92, alignment: .leading)
-                                        }
-                                        .buttonStyle(.plain)
-                                    }
-                                }
-                                .padding(.horizontal, 2)
-                            }
-                        }
-
-                        let addedItems = favoritesStore.items.filter { $0.itemType == "album" || $0.itemType == "playlist" }
-                        if !addedItems.isEmpty {
-                            Text(isEnglish ? "Added" : "Добавлено")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(isDarkMode ? .white : .primary)
-                                .padding(.horizontal, 2)
-
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 12) {
-                                    ForEach(Array(addedItems.prefix(12))) { item in
-                                        VStack(alignment: .leading, spacing: 6) {
-                                            AsyncImage(url: catalogRemoteImageURL(item.coverURL)) { phase in
-                                                switch phase {
-                                                case .success(let img):
-                                                    img.resizable().scaledToFill()
-                                                default:
-                                                    Rectangle().fill(Color.white.opacity(isDarkMode ? 0.08 : 0.06))
-                                                }
-                                            }
-                                            .frame(width: 120, height: 120)
-                                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-                                            Text(item.title)
-                                                .font(.system(size: 13, weight: .semibold))
-                                                .foregroundStyle(isDarkMode ? .white : .primary)
-                                                .lineLimit(1)
-                                            Text(item.itemType == "album" ? (isEnglish ? "Album" : "Альбом") : (isEnglish ? "Playlist" : "Плейлист"))
-                                                .font(.system(size: 12))
-                                                .foregroundStyle(.secondary)
-                                                .lineLimit(1)
-                                        }
-                                        .frame(width: 120, alignment: .leading)
-                                    }
-                                }
-                                .padding(.horizontal, 2)
-                            }
-                        }
-
-                        let likedPlaylists = favoritesStore.items.filter { $0.itemType == "playlist" }
-                        let likedAlbums = favoritesStore.items.filter { $0.itemType == "album" }
-                        let likedArtists = favoritesStore.items.filter { $0.itemType == "artist" }
-                        if !likedPlaylists.isEmpty || !likedAlbums.isEmpty || !likedArtists.isEmpty {
-                            Text(isEnglish ? "More in your collection" : "Ещё у вас в коллекции")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(isDarkMode ? .white : .primary)
-                                .padding(.horizontal, 2)
-                                .padding(.top, 6)
-                        }
-
-                        if !likedPlaylists.isEmpty {
-                            collectionStrip(title: isEnglish ? "Playlists" : "Плейлисты", items: Array(likedPlaylists.prefix(12)))
-                        }
-                        if !likedAlbums.isEmpty {
-                            collectionStrip(title: isEnglish ? "Albums" : "Альбомы", items: Array(likedAlbums.prefix(12)))
-                        }
-                        if !likedArtists.isEmpty {
-                            collectionStrip(title: isEnglish ? "Artists" : "Исполнители", items: Array(likedArtists.prefix(12)))
-                        }
-
-                        Color.clear.frame(height: 120)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                }
-                .refreshable { await FavoritesStore.shared.reload() }
-            }
+        LibraryTabView(
+            isEnglish: isEnglish,
+            isDarkMode: isDarkMode,
+            accent: accent,
+            favoritesStore: favoritesStore,
+            recentStore: recentStore,
+            downloadsStore: downloadsStore,
+            catalogQueue: catalogQueue,
+            groupPlaylists: libraryGroupPlaylists,
+            playlistCoverURLs: libraryPlaylistCoverURLs,
+            playlistDetails: libraryPlaylistDetails,
+            currentUserBackendID: authService.backendAccountSnapshot?.id,
+            isLoadingPlaylists: isLoadingLibraryPlaylists,
+            onPlayCatalogTrack: { track, queue in
+                playCatalogTrack(track, queue: queue)
+                openPlayerSheet()
+            },
+            onPlayRecent: { handleRecentTap($0) },
+            onOpenLiked: { showLikedPlaylist = true },
+            onOpenDownloads: { showLibraryDownloads = true },
+            onOpenGroupPlaylist: { presentedLibraryGroupPlaylist = $0 }
+        )
+        .tabItem { Label(favoritesTitle, systemImage: "books.vertical.fill") }
+        .task { await loadLibraryPlaylistsIfNeeded() }
+        .refreshable {
+            await FavoritesStore.shared.reload()
+            await loadLibraryPlaylistsIfNeeded(force: true)
         }
-        .tabItem { Label(favoritesTitle, systemImage: "heart.fill") }
         .sheet(isPresented: $showLikedPlaylist) {
             LikedPlaylistView(isEnglish: isEnglish, accent: accent, isDarkMode: isDarkMode, onPlayTrack: { t in
                 playCatalogTrack(t)
                 openPlayerSheet()
             })
+        }
+        .sheet(isPresented: $showLibraryDownloads) {
+            NavigationStack {
+                libraryDownloadsSheet
+            }
+        }
+        .sheet(item: $presentedLibraryGroupPlaylist) { playlist in
+            NavigationStack {
+                GroupPlaylistDetailView(playlistID: playlist.id, isEnglish: isEnglish, accent: accent)
+            }
+        }
+    }
+
+    private var libraryDownloadsSheet: some View {
+        let entries = Array(downloadsStore.index.values).sorted { $0.downloadedAt > $1.downloadedAt }
+        return ZStack {
+            mainBackground.ignoresSafeArea()
+            if entries.isEmpty {
+                Text(isEnglish ? "No downloads yet" : "Загрузок пока нет")
+                    .foregroundStyle(.secondary)
+            } else {
+                List {
+                    ForEach(entries, id: \.localRelativePath) { entry in
+                        Button {
+                            let track = CatalogTrack(
+                                id: entry.id,
+                                provider: entry.provider,
+                                title: entry.title,
+                                artist: entry.artist,
+                                coverURL: entry.coverURL
+                            )
+                            playCatalogTrack(track, queue: [track])
+                            showLibraryDownloads = false
+                            openPlayerSheet()
+                        } label: {
+                            HStack(spacing: 12) {
+                                AsyncImage(url: catalogRemoteImageURL(entry.coverURL)) { phase in
+                                    if case .success(let img) = phase {
+                                        img.resizable().scaledToFill()
+                                    } else {
+                                        Rectangle().fill(accent.opacity(0.2))
+                                    }
+                                }
+                                .frame(width: 48, height: 48)
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.title)
+                                        .font(.system(size: 15, weight: .medium))
+                                        .lineLimit(1)
+                                    Text(entry.artist)
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                                ServiceIconBadge(provider: entry.provider)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .listStyle(.plain)
+            }
+        }
+        .navigationTitle(isEnglish ? "Downloads" : "Загрузки")
+    }
+
+    private func loadLibraryPlaylistsIfNeeded(force: Bool = false) async {
+        guard apiClient.isAuthenticated else { return }
+        if !force, !libraryGroupPlaylists.isEmpty { return }
+        await MainActor.run { isLoadingLibraryPlaylists = true }
+        do {
+            let list = try await apiClient.listMyGroupPlaylists()
+            var covers: [String: [String]] = [:]
+            var detailsMap: [String: GroupPlaylistDetail] = [:]
+            for pl in list.prefix(12) {
+                if !pl.cover_url.isEmpty {
+                    covers[pl.id] = [pl.cover_url]
+                }
+                if let detail = try? await apiClient.getGroupPlaylist(id: pl.id) {
+                    detailsMap[pl.id] = detail
+                    let urls = detail.tracks.prefix(3).compactMap { t -> String? in
+                        t.cover_url.isEmpty ? nil : t.cover_url
+                    }
+                    if !urls.isEmpty { covers[pl.id] = urls }
+                }
+            }
+            await MainActor.run {
+                libraryGroupPlaylists = list
+                libraryPlaylistCoverURLs = covers
+                libraryPlaylistDetails = detailsMap
+                isLoadingLibraryPlaylists = false
+            }
+        } catch {
+            await MainActor.run { isLoadingLibraryPlaylists = false }
         }
     }
 
@@ -5506,6 +5889,9 @@ private struct MainAppView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ForEach(items) { item in
+                        Button {
+                            handleFavoriteCollectionTap(item)
+                        } label: {
                         VStack(alignment: .leading, spacing: 6) {
                             AsyncImage(url: catalogRemoteImageURL(item.coverURL)) { phase in
                                 switch phase {
@@ -5524,10 +5910,38 @@ private struct MainAppView: View {
                                 .lineLimit(1)
                         }
                         .frame(width: 96, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 2)
             }
+        }
+    }
+
+    private func handleFavoriteCollectionTap(_ item: FavoriteItem) {
+        switch item.itemType {
+        case "playlist":
+            openCatalogPlaylist(CatalogPlaylist(
+                id: item.providerItemID,
+                provider: item.provider,
+                title: item.title,
+                coverURL: item.coverURL,
+                tracks: nil
+            ))
+        case "album":
+            openAlbum(CatalogAlbum(
+                id: item.providerItemID,
+                provider: item.provider,
+                title: item.title,
+                artist: item.artistName,
+                coverURL: item.coverURL,
+                tracks: nil
+            ))
+        case "artist":
+            openArtistByName(item.title)
+        default:
+            break
         }
     }
 
@@ -5550,7 +5964,7 @@ private struct MainAppView: View {
                     openPlayerSheet()
                 }
             } catch {
-                print("[Sphere] play favorite error:", error.localizedDescription)
+                print("[Node] play favorite error:", error.localizedDescription)
             }
         }
     }
@@ -5614,114 +6028,104 @@ private struct MainAppView: View {
     }
 
     private var settingsTab: some View {
-        ZStack {
-            mainBackground
-                .ignoresSafeArea()
-
-            NavigationStack {
+        NavigationStack {
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 0) {
-                        Text(settingsTitle)
+                    VStack(spacing: 16) {
+                        Text(profileTitle)
                             .font(.title2.weight(.semibold))
-                            .foregroundStyle(isDarkMode ? .white : accent)
+                            .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
-                            .padding(.top, 24)
-                            .padding(.bottom, 16)
+                            .padding(.top, 8)
 
                         if authService.isSignedIn {
-                            SettingsAccountTapHeader(
+                            SettingsProfileHeroCard(
                                 profile: authService.currentProfile,
-                                backendUser: authService.backendAccountSnapshot,
+                                name: authService.currentProfile?.nickname ?? authService.backendAccountSnapshot?.name ?? (isEnglish ? "User" : "Пользователь"),
+                                email: authService.backendAccountSnapshot?.email ?? authService.currentProfile?.email ?? "—",
                                 accent: accent,
-                                nickname: authService.currentProfile?.nickname ?? (isEnglish ? "User" : "Пользователь"),
-                                usernameAt: {
-                                    guard let u = authService.currentProfile?.username, !u.isEmpty else {
-                                        return "@…"
-                                    }
-                                    return u.hasPrefix("@") ? u : "@\(u)"
-                                }(),
-                                isDarkMode: isDarkMode,
-                                onAvatarTap: {
+                                isEnglish: isEnglish,
+                                onOpenProfile: {
                                     syncSettingsAvatarPickerFromProfile()
                                     showSettingsAvatarPicker = true
                                 }
                             )
-                            .padding(.bottom, 24)
-                        }
+                            .padding(.horizontal, 16)
 
-                        if authService.isSignedIn {
                             SettingsGroupContainer(isDarkMode: isDarkMode) {
-                                NavigationLink(
-                                    destination: ProfileSettingsFlowView(
-                                        authService: authService,
-                                        tracks: $tracks,
-                                        trackPlayCounts: $trackPlayCounts,
-                                        accent: accent,
-                                        mainBackground: mainBackground,
-                                        isEnglish: isEnglish,
-                                        onPlayTrack: { track in
-                                            if let idx = tracks.firstIndex(where: { $0.id == track.id }) {
-                                                startPlayback(for: tracks[idx])
-                                            }
-                                        }
-                                    )
-                                ) {
-                                    SettingsGroupRowLabel(icon: "person.crop.circle.fill", title: profileTitle)
+                                Button { showNodePlusSheet = true } label: {
+                                    SettingsGroupRowLabel(icon: "plus.circle.fill", title: "Node+")
                                 }
                                 .buttonStyle(.plain)
                             }
                             .padding(.horizontal, 16)
-                            .padding(.bottom, 16)
+
+                            SettingsGroupContainer(isDarkMode: isDarkMode) {
+                                NavigationLink(destination: LazyView(NodeStudioView(isEnglish: isEnglish, isDarkMode: isDarkMode, accent: accent))) {
+                                    SettingsGroupRowLabel(icon: "waveform", title: "Node Studio")
+                                }
+                                .buttonStyle(.plain)
+
+                                Divider().overlay(Color.white.opacity(0.10)).padding(.leading, 58)
+
+                                NavigationLink(destination: LazyView(ProfileSettingsFlowView(
+                                    authService: authService,
+                                    tracks: $tracks,
+                                    trackPlayCounts: $trackPlayCounts,
+                                    accent: accent,
+                                    mainBackground: mainBackground,
+                                    isEnglish: isEnglish,
+                                    onPlayTrack: { track in
+                                        if let idx = tracks.firstIndex(where: { $0.id == track.id }) {
+                                            startPlayback(for: tracks[idx])
+                                        }
+                                    }
+                                ))) {
+                                    SettingsGroupRowLabel(icon: "clock.arrow.circlepath", title: isEnglish ? "Listening History" : "История прослушивания")
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 16)
                         }
 
                         SettingsGroupContainer(isDarkMode: isDarkMode) {
-                            NavigationLink(destination: PrivacySettingsView(profile: authService.currentProfile, accent: accent, isEnglish: isEnglish, isDarkMode: isDarkMode)) {
+                            NavigationLink(destination: LazyView(PrivacySettingsView(profile: authService.currentProfile, accent: accent, isEnglish: isEnglish, isDarkMode: isDarkMode))) {
                                 SettingsGroupRowLabel(icon: "lock.shield.fill", title: privacyTitle)
                             }
                             .buttonStyle(.plain)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 16)
 
-                        if authService.isSignedIn {
-                            SettingsGroupContainer(isDarkMode: isDarkMode) {
-                                NavigationLink(destination: ChatListView(accent: accent, isEnglish: isEnglish)) {
+                            if authService.isSignedIn {
+                                Divider().overlay(Color.white.opacity(0.10)).padding(.leading, 58)
+                                NavigationLink(destination: LazyView(ChatListView(accent: accent, isEnglish: isEnglish))) {
                                     SettingsGroupRowLabel(icon: "message.fill", title: isEnglish ? "Chats" : "Чаты")
                                 }
                                 .buttonStyle(.plain)
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 16)
-                        }
 
-                        SettingsGroupContainer(isDarkMode: isDarkMode) {
-                            NavigationLink(
-                                destination: SettingsAppearanceScreen(accent: accent, isEnglish: isEnglish, resolvedColorSchemeFromMainApp: colorScheme)
-                            ) {
+                            Divider().overlay(Color.white.opacity(0.10)).padding(.leading, 58)
+                            NavigationLink(destination: LazyView(SettingsAppearanceScreen(accent: accent, isEnglish: isEnglish, resolvedColorSchemeFromMainApp: colorScheme))) {
                                 SettingsGroupRowLabel(icon: "paintbrush.fill", title: themeTitle)
                             }
                             .buttonStyle(.plain)
 
-                            Divider().overlay(Color(.systemGray4)).padding(.leading, 58)
+                            Divider().overlay(Color.white.opacity(0.10)).padding(.leading, 58)
+                            NavigationLink(destination: LazyView(SettingsLanguageScreen(isDarkMode: isDarkMode, accent: accent))) {
+                                SettingsGroupRowLabel(icon: "globe", title: languageSettingsTitle)
+                            }
+                            .buttonStyle(.plain)
 
-                            NavigationLink(
-                                destination: SettingsCustomizationScreen(accent: accent, isEnglish: isEnglish, isDarkMode: isDarkMode)
-                            ) {
+                            Divider().overlay(Color.white.opacity(0.10)).padding(.leading, 58)
+                            NavigationLink(destination: LazyView(SettingsCustomizationScreen(accent: accent, isEnglish: isEnglish, isDarkMode: isDarkMode))) {
                                 SettingsGroupRowLabel(icon: "paintpalette.fill", title: customizationNavTitle)
                             }
                             .buttonStyle(.plain)
 
-                            Divider().overlay(Color(.systemGray4)).padding(.leading, 58)
-
-                            NavigationLink(
-                                destination: SettingsOtherScreen(accent: accent, isEnglish: isEnglish, isDarkMode: isDarkMode, onAddMusic: { isAddingMusic = true })
-                            ) {
+                            Divider().overlay(Color.white.opacity(0.10)).padding(.leading, 58)
+                            NavigationLink(destination: LazyView(SettingsOtherScreen(accent: accent, isEnglish: isEnglish, isDarkMode: isDarkMode, onAddMusic: { isAddingMusic = true }))) {
                                 SettingsGroupRowLabel(icon: "square.grid.2x2.fill", title: otherSettingsNavTitle)
                             }
                             .buttonStyle(.plain)
                         }
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 16)
 
                         SettingsGroupContainer(isDarkMode: isDarkMode) {
                             Button {
@@ -5737,8 +6141,15 @@ private struct MainAppView: View {
 
                         Spacer(minLength: 0)
                     }
+                    .padding(.vertical, 12)
                 }
-            }
+                .background(Color.black.ignoresSafeArea())
+                .sheet(isPresented: $showNodePlusSheet) {
+                    NodePlusSubscriptionScreen(isDarkMode: isDarkMode, isEnglish: isEnglish)
+                        .preferredColorScheme(.dark)
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {
@@ -5808,25 +6219,37 @@ private struct MainAppView: View {
 
     // MARK: - Redesign v3 tabs (native TabView, 4 slots)
 
+    private var showHomeBackendLoadingV2: Bool {
+        isLoadingRecommendations && recommendations == nil
+    }
+
     private var homeTabV2: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
-                    homeRecommendationsSectionV2
-                    homeLibrarySectionV2
-                    homeRecentlyPlayedSection
-                    homeArtistsCircleSection
+                    if showHomeBackendLoadingV2 {
+                        HomeBackendLoadingView()
+                            .padding(.top, 6)
+                    } else {
+                        homeDiscoverEntry
+                        homeRecommendationsSectionV2
+                        homeArtistsCircleSection
+                    }
                     Color.clear.frame(height: 40)
                 }
                 .padding(.vertical, 16)
             }
             .background {
                 ZStack {
-                    mainBackground.ignoresSafeArea()
-                    if currentTrack != nil, playbackHolder.isPlaying {
-                        AnimatedCoverGradientBackground(accent: (currentCoverAccent ?? accent), isDarkMode: isDarkMode)
-                            .ignoresSafeArea()
-                            .transition(.opacity)
+                    mainHarmonyBackground
+                    if currentTrack != nil {
+                        AnimatedCoverGradientBackground(
+                            accent: (currentCoverAccent ?? accent),
+                            isDarkMode: isDarkMode,
+                            beatPunch: playbackHolder.isPlaying ? homeBeatPulseDriver.punch : nil
+                        )
+                        .ignoresSafeArea()
+                        .transition(.opacity)
                     }
                 }
             }
@@ -5838,6 +6261,53 @@ private struct MainAppView: View {
     }
 
     @ViewBuilder
+    private var homeDiscoverEntry: some View {
+        Button {
+            showDiscoverSwipe = true
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    LinearGradient(
+                        colors: [
+                            NodeDesignStyle.tilePalette[0],
+                            NodeDesignStyle.tilePalette[1],
+                            NodeDesignStyle.tilePalette[2],
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 64, height: 64)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(isEnglish ? "Discover something new" : "Найди для себя что-то новое")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                    Text(isEnglish ? "Swipe through fresh tracks" : "Свайпай свежие треки")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.72))
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+            .padding(14)
+            .libraryGlassCard(cornerRadius: 20)
+            .padding(.horizontal, 16)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
     private var homeRecommendationsSectionV2: some View {
         if let recs = recommendations,
            !recs.tracks.isEmpty || !recs.albums.isEmpty || !recs.artists.isEmpty {
@@ -5845,7 +6315,7 @@ private struct MainAppView: View {
                 if !recs.tracks.isEmpty {
                     Text(isEnglish ? "Recommended tracks" : "Рекомендованные треки")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.white)
                         .padding(.leading, 18)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
@@ -5868,7 +6338,7 @@ private struct MainAppView: View {
                 if !recs.albums.isEmpty {
                     Text(isEnglish ? "Recommended albums" : "Рекомендованные альбомы")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.white)
                         .padding(.leading, 18)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
@@ -5882,7 +6352,7 @@ private struct MainAppView: View {
                 if !recs.artists.isEmpty {
                     Text(isEnglish ? "Recommended artists" : "Рекомендованные исполнители")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.white)
                         .padding(.leading, 18)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
@@ -6024,6 +6494,8 @@ private struct MainAppView: View {
                     .lineLimit(1)
                     .frame(width: 120, alignment: .leading)
             }
+            .padding(10)
+            .libraryGlassCard(cornerRadius: 16)
         }
         .buttonStyle(.plain)
     }
@@ -6168,8 +6640,7 @@ private struct MainAppView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(isDarkMode ? Color(white: 0.12) : Color(.systemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .libraryGlassCard(cornerRadius: 14)
         .padding(.horizontal, 16)
     }
 
@@ -6180,10 +6651,10 @@ private struct MainAppView: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 4)
                     .padding(.bottom, 8)
-                    .background(mainBackground)
+                    .background(NodeHarmonyBackground(isDarkMode: isDarkMode, accent: accent, intensity: 0.72))
                 searchResultsListView
             }
-            .background(mainBackground.ignoresSafeArea())
+            .background(NodeHarmonyBackground(isDarkMode: isDarkMode, accent: accent, intensity: 0.72))
             .navigationTitle(isEnglish ? "Search" : "Поиск")
         }
         .tabItem {
@@ -6195,14 +6666,19 @@ private struct MainAppView: View {
     private var inlineSearchBar: some View {
         HStack(spacing: 10) {
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                ZStack {
+                    Circle().fill(accent)
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 28, height: 28)
                 TextField(
                     isEnglish ? "Tracks, albums, artists" : "Треки, альбомы, артисты",
                     text: $homeSearchText
                 )
-                .font(.system(size: 15))
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
                 .focused($isSearchFieldFocused)
                 .submitLabel(.search)
                 .onChange(of: homeSearchText) { newValue in
@@ -6217,17 +6693,18 @@ private struct MainAppView: View {
                         homeSearchText = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 15))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 16))
+                            .foregroundStyle(Color.white.opacity(0.5))
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(
-                Capsule().fill(isDarkMode ? Color(white: 0.14) : Color(.systemGray6))
-            )
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay {
+                Capsule().strokeBorder(NodeDesignStyle.glassStrokePrimary, lineWidth: 0.8)
+            }
 
             if isSearchFieldFocused || !homeSearchText.isEmpty {
                 Button {
@@ -6235,8 +6712,8 @@ private struct MainAppView: View {
                     isSearchFieldFocused = false
                 } label: {
                     Text(isEnglish ? "Cancel" : "Отмена")
-                        .font(.system(size: 15))
-                        .foregroundStyle(.primary)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(accent)
                 }
                 .buttonStyle(.plain)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -6268,11 +6745,8 @@ private struct MainAppView: View {
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(
-                            Capsule().fill(isSelected ? accent.opacity(0.2) : (isDarkMode ? Color(white: 0.14) : Color(.systemGray6)))
-                        )
-                        .overlay(Capsule().stroke(isSelected ? accent : .clear, lineWidth: 1.5))
-                        .foregroundStyle(isSelected ? accent : .primary)
+                        .libraryGlassPill(selected: isSelected)
+                        .foregroundStyle(isSelected ? .white : NodeDesignStyle.secondaryText(for: isDarkMode))
                     }
                     .buttonStyle(.plain)
                 }
@@ -6293,6 +6767,7 @@ private struct MainAppView: View {
                     }
                     .pickerStyle(.segmented)
                     .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
                     .onChange(of: searchMode) { _ in
                         if searchMode == .tracks {
                             debouncedCatalogSearch(homeSearchText)
@@ -6491,23 +6966,25 @@ private struct MainAppView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.displayTitle)
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(NodeDesignStyle.primaryText(for: isDarkMode))
                         .lineLimit(1)
                     Text(track.displayArtist)
                         .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(NodeDesignStyle.secondaryText(for: isDarkMode))
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
                 Text(isEnglish ? "Local" : "В устройстве")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(NodeDesignStyle.secondaryText(for: isDarkMode))
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
+            .libraryGlassCard(cornerRadius: 14)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .padding(.horizontal, 16)
     }
 
     @ViewBuilder
@@ -6533,11 +7010,11 @@ private struct MainAppView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.title)
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(NodeDesignStyle.primaryText(for: isDarkMode))
                         .lineLimit(1)
                     Text(track.artist)
                         .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(NodeDesignStyle.secondaryText(for: isDarkMode))
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
@@ -6548,9 +7025,11 @@ private struct MainAppView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
+            .libraryGlassCard(cornerRadius: 14)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .padding(.horizontal, 16)
     }
 
     @ViewBuilder
@@ -6712,8 +7191,83 @@ private struct MainAppView: View {
     }
 
     private func miniPlayer(for track: AppTrack, namespace: Namespace.ID, playbackHolder: PlaybackStateHolder) -> some View {
-        MiniPlayerBarView(track: track, catalogTrack: currentCatalogTrack, accent: accent, playbackHolder: playbackHolder, onPlayPause: togglePlayPause, onTap: openPlayerSheet, onArtistTap: { openArtistByName(track.displayArtist) }, namespace: namespace, playerStyleIndex: playerStyleIndex, roundPlayerCover: enableRoundPlayerCover)
+        MiniPlayerBarView(track: track, catalogTrack: currentCatalogTrack, accent: accent, playbackHolder: playbackHolder, onPlayPause: togglePlayPause, onTap: openPlayerSheet, onArtistTap: { openArtistByName(track.displayArtist, asPopup: true) }, namespace: namespace, playerStyleIndex: playerStyleIndex, roundPlayerCover: enableRoundPlayerCover)
     }
+
+/// `tabViewBottomAccessory(isEnabled:)` доступен с iOS 26.1; на 26.0 — условное содержимое без пустого слота.
+@available(iOS 26.0, *)
+private struct TabBarMinimizeOnScrollModifier: ViewModifier {
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.tabBarMinimizeBehavior(.onScrollDown)
+        } else {
+            content
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+private struct TabBarBottomAccessoryModifier<Accessory: View>: ViewModifier {
+    let isEnabled: Bool
+    @ViewBuilder let content: () -> Accessory
+
+    func body(content base: Content) -> some View {
+        if #available(iOS 26.1, *) {
+            base.tabViewBottomAccessory(isEnabled: isEnabled) {
+                self.content()
+            }
+        } else {
+            base.tabViewBottomAccessory {
+                if isEnabled {
+                    self.content()
+                }
+            }
+        }
+    }
+}
+
+/// Мини-плеер в `tabViewBottomAccessory` (iOS 26): inline в капсуле таббара, сворачивается при прокрутке.
+@available(iOS 26.0, *)
+private struct TabBarBottomAccessoryContent: View {
+    let showMiniPlayer: Bool
+    let track: AppTrack?
+    var catalogTrack: CatalogTrack?
+    let accent: Color
+    @ObservedObject var playbackHolder: PlaybackStateHolder
+    let namespace: Namespace.ID
+    var playerStyleIndex: Int
+    var roundPlayerCover: Bool
+    let onPlayPause: () -> Void
+    let onTapMini: () -> Void
+    let onArtistTap: () -> Void
+
+    var body: some View {
+        Group {
+            if showMiniPlayer, let track {
+                miniPlayer(for: track)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func miniPlayer(for track: AppTrack) -> some View {
+        MiniPlayerBarView(
+            track: track,
+            catalogTrack: catalogTrack,
+            accent: accent,
+            playbackHolder: playbackHolder,
+            onPlayPause: onPlayPause,
+            onTap: onTapMini,
+            onArtistTap: onArtistTap,
+            namespace: namespace,
+            playerStyleIndex: playerStyleIndex,
+            roundPlayerCover: roundPlayerCover,
+            tabBarAccessoryInline: true
+        )
+    }
+}
 
 private struct MiniPlayerBarView: View {
     let track: AppTrack
@@ -6726,93 +7280,94 @@ private struct MiniPlayerBarView: View {
     let namespace: Namespace.ID
     var playerStyleIndex: Int = 0
     var roundPlayerCover: Bool = false
+    /// Компактный вид в свёрнутой панели вкладок (inline accessory).
+    var tabBarAccessoryInline: Bool = false
 
-	    var body: some View {
-	        let content = HStack(alignment: .center, spacing: 10) {
-	            miniCoverView
-	                .frame(width: 44, height: 44)
-	                .clipShape(RoundedRectangle(cornerRadius: 8))
-	                .overlay(
-	                    GeometryReader { g in
-	                        Color.clear.preference(key: MiniCoverFrameKey.self, value: g.frame(in: .global))
-	                    }
-	                )
+    var body: some View {
+            let coverSide: CGFloat = tabBarAccessoryInline ? 36 : 44
+            let playSide: CGFloat = tabBarAccessoryInline ? 38 : 44
+            let content = HStack(alignment: .center, spacing: tabBarAccessoryInline ? 8 : 10) {
+                HStack(alignment: .center, spacing: tabBarAccessoryInline ? 8 : 10) {
+                    miniCoverView
+                        .frame(width: coverSide, height: coverSide)
+                        .clipShape(RoundedRectangle(cornerRadius: tabBarAccessoryInline ? 6 : 8))
+                        .overlay(
+                            GeometryReader { g in
+                                Color.clear.preference(key: MiniCoverFrameKey.self, value: g.frame(in: .global))
+                            }
+                        )
 
-	            VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 2) {
                 Text(track.displayTitle)
-                    .font(.subheadline.weight(.semibold))
+                    .font(tabBarAccessoryInline ? .caption.weight(.semibold) : .subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
-                if !track.displayArtist.isEmpty {
-                    Text(track.displayArtist)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .onTapGesture { onArtistTap?() }
+                        if !tabBarAccessoryInline, !track.displayArtist.isEmpty {
+                            Text(track.displayArtist)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .onTapGesture { onArtistTap?() }
+                        }
+                    }
                 }
-            }
+                .contentShape(Rectangle())
+                .onTapGesture { onTap() }
 
-            Spacer()
+                Spacer(minLength: 0)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onTap() }
 
-            Button {
-                onPlayPause()
-            } label: {
-                ZStack {
-                    Circle()
-                        .stroke(accent.opacity(0.25), lineWidth: 3)
-                        .frame(width: 44, height: 44)
-                    Circle()
-                        .trim(from: 0, to: CGFloat(playbackHolder.progress))
-                        .stroke(accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                        .frame(width: 44, height: 44)
-                        .rotationEffect(.degrees(-90))
-                    Circle()
-                        .fill(accent.opacity(0.9))
-                        .frame(width: 36, height: 36)
-                    Image(systemName: playbackHolder.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Color.white)
+                Button {
+                    onPlayPause()
+                } label: {
+                    ZStack {
+                        Circle()
+                            .stroke(accent.opacity(0.25), lineWidth: 3)
+                            .frame(width: playSide, height: playSide)
+                        Circle()
+                            .trim(from: 0, to: CGFloat(playbackHolder.progress))
+                            .stroke(accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                            .frame(width: playSide, height: playSide)
+                            .rotationEffect(.degrees(-90))
+                        Circle()
+                            .fill(accent.opacity(0.9))
+                            .frame(width: playSide - 8, height: playSide - 8)
+                        Image(systemName: playbackHolder.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: tabBarAccessoryInline ? 14 : 16, weight: .bold))
+                            .foregroundStyle(Color.white)
+                    }
+                    .frame(width: playSide, height: playSide)
+                    .contentShape(Circle())
                 }
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+            .padding(.horizontal, tabBarAccessoryInline ? 10 : 12)
+            .padding(.vertical, tabBarAccessoryInline ? 6 : 8)
 
         return Group {
             if #available(iOS 26.0, *) {
                 content
-                    .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 14))
-                    .padding(.horizontal, 16)
-                    .contentShape(Rectangle())
-                    .onTapGesture { onTap() }
+                    .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: tabBarAccessoryInline ? 12 : 14))
+                    .padding(.horizontal, tabBarAccessoryInline ? 0 : 16)
             } else {
                 content
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
                     .padding(.horizontal, 16)
                     .padding(.bottom, 4)
-                    .onTapGesture { onTap() }
             }
         }
     }
 
     @ViewBuilder
     private var miniCoverView: some View {
-        if let urlStr = catalogTrack?.coverURL, let url = URL(string: urlStr) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let img):
-                    img.resizable().scaledToFill()
-                default:
-                    coverPlaceholder
-                }
-            }
-        } else {
-            MiniPlayerCoverViewIOS26(track: track, accent: accent, roundPlayerCover: roundPlayerCover)
-        }
+        MiniPlayerCoverViewIOS26(
+            track: track,
+            accent: accent,
+            roundPlayerCover: roundPlayerCover,
+            catalogCoverURL: catalogTrack?.coverURL
+        )
     }
 
     private var coverPlaceholder: some View {
@@ -6991,6 +7546,8 @@ private struct MiniPlayerBarView: View {
         let equalizerTitle: String
         let shareTitle: String
         var listenTogetherTitle: String = "Listen Together"
+        var isKaraokeActive: Bool = false
+        var isKaraokePreparing: Bool = false
         let controlsColor: Color
         let bottomIconColor: Color
         let bottomCircleTint: Color
@@ -7006,10 +7563,22 @@ private struct MiniPlayerBarView: View {
         let onShareTrack: () -> Void
         let onLyricsTap: () -> Void
         var onListenTogether: () -> Void = {}
+        var onKaraokeTap: () -> Void = {}
 
         var body: some View {
-            HStack(spacing: 24) {
+            HStack(spacing: useGlassStyle ? 16 : 20) {
                 if #available(iOS 26.0, *), useGlassStyle {
+                    Button { DispatchQueue.main.async { onKaraokeTap() } } label: {
+                        Image(systemName: isKaraokeActive ? "mic.fill" : "mic")
+                            .font(.title2)
+                            .foregroundStyle(isKaraokeActive ? Color.orange : bottomIconColor)
+                            .frame(width: 44, height: 44)
+                            .opacity(isKaraokePreparing ? 0.5 : 1)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isKaraokePreparing)
+                    .glassEffect(.regular.tint(bottomCircleTint).interactive(), in: Circle())
+
                     Button { DispatchQueue.main.async { onFavoriteToggle() } } label: {
                         Image(systemName: isFavorite ? "heart.fill" : "heart")
                             .font(.title2)
@@ -7123,6 +7692,16 @@ private struct MiniPlayerBarView: View {
                     .buttonStyle(.plain)
                     .glassEffect(.regular.tint(bottomCircleTint).interactive(), in: Circle())
                 } else {
+                    Button { DispatchQueue.main.async { onKaraokeTap() } } label: {
+                        Image(systemName: isKaraokeActive ? "mic.fill" : "mic")
+                            .font(.title2)
+                            .foregroundStyle(isKaraokeActive ? .orange : controlsColor)
+                            .opacity(isKaraokePreparing ? 0.5 : 1)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isKaraokePreparing)
+                    .frame(width: 44, height: 44)
+
                     Button { DispatchQueue.main.async { onFavoriteToggle() } } label: {
                         Image(systemName: isFavorite ? "heart.fill" : "heart")
                             .font(.title2)
@@ -7231,6 +7810,26 @@ private struct MiniPlayerBarView: View {
                     .frame(width: 44, height: 44)
                 }
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background {
+                if #available(iOS 26.0, *), useGlassStyle {
+                    Capsule(style: .continuous)
+                        .fill(.clear)
+                        .glassEffect(.regular.tint(bottomCircleTint.opacity(0.35)).interactive(), in: Capsule(style: .continuous))
+                        .overlay {
+                            Capsule(style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.8)
+                        }
+                } else {
+                    Capsule(style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .overlay {
+                            Capsule(style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.8)
+                        }
+                }
+            }
         }
     }
 
@@ -7303,6 +7902,13 @@ private struct MiniPlayerBarView: View {
                 )
                 .tint(controlsColor)
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.8)
+            }
             .onReceive(scrubDecayTimer) { _ in
                 guard isSeeking else { return }
                 let next = seekScrubIntensity * 0.88
@@ -7347,7 +7953,7 @@ private struct MiniPlayerBarView: View {
         }
     }
 
-    /// Плеер из бэкапа (Sphere16): без капсулы у названия, нижний ряд кнопок без кружков, обложка/название/кнопки/ползунки ниже. Только для стиля 1 на iOS 26.
+    /// Плеер из бэкапа (Node16): без капсулы у названия, нижний ряд кнопок без кружков, обложка/название/кнопки/ползунки ниже. Только для стиля 1 на iOS 26.
     private struct PlayerSheetViewStyle1FromBackup: View {
         @Environment(\.colorScheme) private var colorScheme
         let track: AppTrack
@@ -7497,7 +8103,7 @@ private struct MiniPlayerBarView: View {
                                                 .resizable()
                                                 .scaledToFill()
                                                 .clipShape(RoundedRectangle(cornerRadius: coverCR))
-                                        } else if let urlStr = catalogTrack?.coverURL, let url = URL(string: urlStr) {
+                                        } else if let url = catalogRemoteImageURL(catalogTrack?.coverURL) {
                                             AsyncImage(url: url) { phase in
                                                 switch phase {
                                                 case .success(let img):
@@ -7826,6 +8432,9 @@ private struct MiniPlayerBarView: View {
         var onShareCatalogTrack: (CatalogTrack) -> Void = { _ in }
         var onLyricsTap: () -> Void = {}
         var onListenTogether: () -> Void = {}
+        var isKaraokeActive: Bool = false
+        var isKaraokePreparing: Bool = false
+        var onKaraokeTap: () -> Void = {}
         var onArtistTap: (() -> Void)? = nil
         /// Список треков и обложек для перелистывания (используется на iOS 26 в стилях 2 и 3).
         var tracks: [AppTrack] = []
@@ -7998,7 +8607,7 @@ private struct MiniPlayerBarView: View {
                                                 .resizable()
                                                 .scaledToFill()
                                                 .clipShape(RoundedRectangle(cornerRadius: coverCR))
-                                        } else if let urlStr = catalogTrack?.coverURL, let url = URL(string: urlStr) {
+                                        } else if let url = catalogRemoteImageURL(catalogTrack?.coverURL) {
                                             AsyncImage(url: url) { phase in
                                                 switch phase {
                                                 case .success(let img):
@@ -8296,6 +8905,8 @@ private struct MiniPlayerBarView: View {
                                 equalizerTitle: equalizerSheetTitle,
                                 shareTitle: isEnglish ? "Share" : "Поделиться",
                                 listenTogetherTitle: isEnglish ? "Listen Together" : "Слушать вместе",
+                                isKaraokeActive: isKaraokeActive,
+                                isKaraokePreparing: isKaraokePreparing,
                                 controlsColor: controlsColor,
                                 bottomIconColor: {
                                     if #available(iOS 26.0, *) {
@@ -8326,7 +8937,8 @@ private struct MiniPlayerBarView: View {
                                     onShareCatalogTrack(ct)
                                 },
                                 onLyricsTap: onLyricsTap,
-                                onListenTogether: onListenTogether
+                                onListenTogether: onListenTogether,
+                                onKaraokeTap: onKaraokeTap
                             )
                             Spacer(minLength: 0)
                         }
@@ -9431,7 +10043,7 @@ struct SignInView: View {
                 ProgressView()
                     .padding(.bottom, 8)
             }
-            Text(isEnglish ? "Open Sphere on your phone and approve this login." : "Откройте Sphere на телефоне и подтвердите вход.")
+            Text(isEnglish ? "Open Node on your phone and approve this login." : "Откройте Node на телефоне и подтвердите вход.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -11036,46 +11648,64 @@ struct ProfileAvatarCoreView: View {
 }
 
 /// Inset-grouped list container for settings sections (gray background, 14pt corner radius).
-private struct SettingsGroupContainer<Content: View>: View {
+struct SettingsGroupContainer<Content: View>: View {
     let isDarkMode: Bool
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(spacing: 0) { content }
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(isDarkMode ? Color(white: 0.10) : Color(.systemGray6))
-            )
+            .background {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.white.opacity(0.02))
+                    // Subtle inner glow at top
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(LinearGradient(
+                            colors: [Color.white.opacity(0.03), .clear, .clear],
+                            startPoint: .top, endPoint: .bottom))
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.7)
+                }
+                .shadow(color: .black.opacity(0.25), radius: 12, y: 5)
+            }
     }
 }
 
-/// One row inside a settings group: gray-filled circle icon + title + chevron.
-private struct SettingsGroupRowLabel: View {
+/// One row inside a settings group: colorful tile-palette icon + title + subtle chevron.
+struct SettingsGroupRowLabel: View {
     let icon: String
     let title: String
     var showsChevron: Bool = true
 
+    private var iconColor: Color {
+        NodeDesignStyle.tileColor(for: icon)
+    }
+
     var body: some View {
         HStack(spacing: 14) {
             ZStack {
-                Circle().fill(Color(.systemGray))
+                Circle().fill(iconColor.opacity(0.16))
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(iconColor)
             }
-            .frame(width: 30, height: 30)
+            .frame(width: 34, height: 34)
             Text(title)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(.primary)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.white)
             Spacer()
             if showsChevron {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color(.systemGray3))
+                    .foregroundStyle(Color.white.opacity(0.35))
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
         .contentShape(Rectangle())
     }
 }
@@ -11703,7 +12333,7 @@ private struct ProfileView: View {
             let entries = try await SphereAPIClient.shared.getHistory()
             await MainActor.run { listenHistory = entries }
         } catch {
-            print("[Sphere] load history error:", error.localizedDescription)
+            print("[Node] load history error:", error.localizedDescription)
         }
     }
 
@@ -12463,7 +13093,7 @@ private struct PrivacySettingsView: View {
                             Text(isEnglish ? "Approve QR login (scan)" : "Подтвердить вход по QR (сканировать)")
                         }
                     } else {
-                        Text(isEnglish ? "Sign in with email on the Sphere backend to change password or email." : "Войдите по почте в бэкенд Sphere, чтобы менять пароль и почту.")
+                        Text(isEnglish ? "Sign in with email on the Node backend to change password or email." : "Войдите по почте в бэкенд Node, чтобы менять пароль и почту.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -13141,26 +13771,64 @@ private struct DownloadedTracksListView: View {
 private struct AnimatedCoverGradientBackground: View {
     let accent: Color
     let isDarkMode: Bool
+    /// `nil` — медленная анимация (загрузка трека); значение 0…1 — удары в такт при воспроизведении.
+    var beatPunch: CGFloat? = nil
+
     @State private var phase = false
 
+    private var isBeatMode: Bool { beatPunch != nil }
+    private var punch: CGFloat { min(max(beatPunch ?? 0, 0), 1) }
+
     var body: some View {
+        let primaryCenter: UnitPoint = {
+            if isBeatMode {
+                return UnitPoint(
+                    x: 0.5 + CGFloat(sin(punch * .pi * 2)) * 0.12,
+                    y: 0.38 + CGFloat(cos(punch * .pi)) * 0.08
+                )
+            }
+            return phase ? .topLeading : .bottomTrailing
+        }()
+        let secondaryCenter: UnitPoint = {
+            if isBeatMode {
+                return UnitPoint(
+                    x: 0.5 + CGFloat(cos(punch * .pi * 2 + 1.2)) * 0.1,
+                    y: 0.62 + CGFloat(sin(punch * .pi + 0.6)) * 0.07
+                )
+            }
+            return phase ? .bottomTrailing : .topLeading
+        }()
+        let primaryRadius: CGFloat = isBeatMode ? (320 + punch * 140) : 400
+        let secondaryRadius: CGFloat = isBeatMode ? (260 + punch * 110) : 350
+        let primaryOpacity = isBeatMode ? (0.28 + Double(punch) * 0.18) : 0.32
+        let secondaryOpacity = isBeatMode ? (0.18 + Double(punch) * 0.14) : 0.22
+
         ZStack {
             RadialGradient(
-                colors: [accent.opacity(0.5), .clear],
-                center: phase ? .topLeading : .bottomTrailing,
-                startRadius: 50,
-                endRadius: 400
+                colors: [accent.opacity(primaryOpacity), .clear],
+                center: primaryCenter,
+                startRadius: isBeatMode ? 40 + punch * 30 : 50,
+                endRadius: primaryRadius
             )
             RadialGradient(
-                colors: [accent.opacity(0.35), .clear],
-                center: phase ? .bottomTrailing : .topLeading,
-                startRadius: 30,
-                endRadius: 350
+                colors: [accent.opacity(secondaryOpacity), .clear],
+                center: secondaryCenter,
+                startRadius: isBeatMode ? 24 + punch * 22 : 30,
+                endRadius: secondaryRadius
             )
         }
-        .opacity(isDarkMode ? 0.8 : 0.5)
-        .animation(.easeInOut(duration: 7).repeatForever(autoreverses: true), value: phase)
-        .onAppear { phase = true }
+        .opacity(isDarkMode ? 0.55 : 0.4)
+        .animation(isBeatMode ? nil : .easeInOut(duration: 7).repeatForever(autoreverses: true), value: phase)
+        .onAppear {
+            if !isBeatMode { phase = true }
+        }
+        .onChange(of: isBeatMode) { beat in
+            if beat {
+                phase = false
+            } else {
+                phase = true
+            }
+        }
     }
 }
 

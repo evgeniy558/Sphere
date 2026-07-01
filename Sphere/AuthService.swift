@@ -1,6 +1,6 @@
 //
 //  AuthService.swift
-//  Sphere
+//  Node
 //
 //  Google Sign-In + Supabase session and profile sync.
 //
@@ -10,6 +10,7 @@ import SwiftUI
 import UIKit
 import Combine
 import CryptoKit
+import AuthenticationServices
 import GoogleSignIn
 import Supabase
 
@@ -17,6 +18,7 @@ import Supabase
 enum AuthProvider: String, Codable {
     case google
     case email
+    case apple
 }
 
 /// Модель профиля пользователя в Supabase (таблица profiles)
@@ -66,7 +68,7 @@ struct UserProfile: Codable, Equatable {
 final class AuthService: ObservableObject {
     static let shared = AuthService()
 
-    private let supabaseURL = URL(string: "https://yqfcgwzrlciujrepwxny.supabase.co")!
+    private let supabaseURL = URL(string: "https://dsgjedfenefzcjatfacj.supabase.co")!
     private let supabaseAnonKey = "sb_publishable_OpFfXtT6-E5KIiyAUeqZAA_8k4CyYaF"
     private(set) var client: SupabaseClient?
 
@@ -148,7 +150,7 @@ final class AuthService: ObservableObject {
                         return
                     }
                     guard let signInResult = signInResult else {
-                        continuation.resume(throwing: NSError(domain: "Sphere", code: -1, userInfo: [NSLocalizedDescriptionKey: "No sign-in result"]))
+                        continuation.resume(throwing: NSError(domain: "Node", code: -1, userInfo: [NSLocalizedDescriptionKey: "No sign-in result"]))
                         return
                     }
                     continuation.resume(returning: signInResult)
@@ -165,21 +167,21 @@ final class AuthService: ObservableObject {
             let displayName = user.profile?.name ?? "User"
             let photoURL = user.profile?.imageURL(withDimension: 200)?.absoluteString
 
-            // Сначала логинимся в Sphere-бэкенде по Google id_token: это обязательно для работы API
+            // Сначала логинимся в Node-бэкенде по Google id_token: это обязательно для работы API
             // (рекомендации, чаты, профиль). Backend сам валидирует токен и выдаёт JWT.
             let backendResponse: AuthResponse
             do {
                 backendResponse = try await SphereAPIClient.shared.loginWithGoogle(idToken: idToken)
             } catch {
                 authError = error.localizedDescription
-                print("[AuthService] Sphere backend Google login failed: \(error.localizedDescription)")
+                print("[AuthService] Node backend Google login failed: \(error.localizedDescription)")
                 return
             }
 
             // Supabase (GoTrue): hash = hex(SHA256(params.Nonce)), сравнивается с id_token.nonce —
             // мы передали hashedNonceForGoogle в Google, поэтому в теле передаём rawNonce.
             // Если Supabase упадёт (например, временная ошибка GoTrue), мы всё равно входим — основной
-            // авторитет авторизации это наш Sphere-бэкенд, Supabase используется только для синка профиля.
+            // авторитет авторизации это наш Node-бэкенд, Supabase используется только для синка профиля.
             var supabaseUserId: String?
             if let client = client {
                 do {
@@ -216,7 +218,7 @@ final class AuthService: ObservableObject {
             applyBackendUser(backendResponse.user)
 
             // Дотягиваем профиль из Supabase асинхронно — если он не дотянется, ничего страшного,
-            // основная авторизация уже работает через Sphere-бэкенд.
+            // основная авторизация уже работает через Node-бэкенд.
             if supabaseUserId != nil {
                 do {
                     try await upsertProfileInSupabase(profile)
@@ -228,6 +230,59 @@ final class AuthService: ObservableObject {
         } catch {
             authError = error.localizedDescription
         }
+    }
+
+    /// Вход через Apple без отдельного backend OAuth-эндпоинта:
+    /// создаём локальный профиль, затем поднимаем backend-сессию через `ensureBackendAuth`.
+    func signInWithApple(credential: ASAuthorizationAppleIDCredential) async {
+        authError = nil
+
+        let appleUserId = credential.user
+        let storedEmailKey = "appleSignIn.email.\(appleUserId)"
+        let storedNameKey = "appleSignIn.name.\(appleUserId)"
+
+        let incomingEmail = credential.email?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let incomingEmail, !incomingEmail.isEmpty {
+            UserDefaults.standard.set(incomingEmail, forKey: storedEmailKey)
+        }
+        let backendEmail = "apple_\(appleUserId)@sphere.app"
+
+        let formatter = PersonNameComponentsFormatter()
+        let fullName = formatter.string(from: credential.fullName ?? PersonNameComponents()).trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedName: String
+        if !fullName.isEmpty {
+            UserDefaults.standard.set(fullName, forKey: storedNameKey)
+            resolvedName = fullName
+        } else if let saved = UserDefaults.standard.string(forKey: storedNameKey), !saved.isEmpty {
+            resolvedName = saved
+        } else {
+            resolvedName = "Apple User"
+        }
+
+        let normalizedSeed = resolvedName.lowercased().filter { $0.isLetter || $0.isNumber }
+        let username = normalizedSeed.isEmpty ? "user_\(appleUserId.prefix(8))" : String(normalizedSeed.prefix(30))
+        let userId = "apple_\(appleUserId)"
+
+        let profile = UserProfile.placeholder(
+            userId: userId,
+            email: backendEmail,
+            nickname: resolvedName,
+            username: normalizedUsername(from: username, fallbackUserId: userId),
+            provider: .apple
+        )
+
+        currentProfile = profile
+        isSignedIn = true
+        authError = nil
+        persistProfileLocally(profile)
+        UserDefaults.standard.set(userId, forKey: "sphere_user_id")
+
+        await SphereAPIClient.shared.ensureBackendAuth(
+            email: backendEmail,
+            name: resolvedName,
+            userId: userId
+        )
+        await refreshBackendAccountFromServer()
     }
 
     private func randomNonceString(length: Int = 32) -> String {
@@ -640,7 +695,7 @@ final class AuthService: ObservableObject {
                 email: email,
                 nickname: nickname,
                 username: normalizedUsername(from: usernameSource, fallbackUserId: userId),
-                provider: metadata["provider"]?.stringValue == AuthProvider.google.rawValue ? .google : .email
+                provider: providerFromMetadata(metadata["provider"]?.stringValue)
             )
             profile.avatarUrl = metadata["avatar_url"]?.stringValue
             profile.bio = metadata["bio"]?.stringValue
@@ -672,6 +727,17 @@ final class AuthService: ObservableObject {
             return "user_\(fallbackUserId.prefix(8))"
         }
         return String(cleaned.prefix(30))
+    }
+
+    private func providerFromMetadata(_ value: String?) -> AuthProvider {
+        switch value {
+        case AuthProvider.google.rawValue:
+            return .google
+        case AuthProvider.apple.rawValue:
+            return .apple
+        default:
+            return .email
+        }
     }
 
     /// Выход: очистить сессию и профиль

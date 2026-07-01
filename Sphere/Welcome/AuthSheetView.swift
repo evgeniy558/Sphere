@@ -5,6 +5,7 @@ import SwiftUI
 struct AuthSheetView: View {
     let isEnglish: Bool
     let accent: Color
+    var startInSignup: Bool = false
     var onAuthenticated: () -> Void
     var onDismiss: () -> Void
 
@@ -47,8 +48,8 @@ struct AuthSheetView: View {
     private var title: String { isEnglish ? "Get Started now" : "Начни сейчас" }
     private var subtitle: String {
         isEnglish
-            ? "Create an account or log in to explore Sphere!"
-            : "Создай аккаунт или войди, чтобы исследовать Sphere!"
+            ? "Create an account or log in to explore Node!"
+            : "Создай аккаунт или войди, чтобы исследовать Node!"
     }
 
     private var formIsValidLogin: Bool {
@@ -64,6 +65,7 @@ struct AuthSheetView: View {
     }
 
     private let rememberEmailKey = "welcomeAuthRememberedEmail"
+    private static let preferTestAccountKey = "spherePreferTestAccount"
     private let primaryBlueGradient = LinearGradient(
         colors: [
             Color(red: 52 / 255, green: 130 / 255, blue: 1),
@@ -75,6 +77,10 @@ struct AuthSheetView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
+            // Premium animated background
+            NodeHarmonyBackground(isDarkMode: true, accent: accent, intensity: 0.55)
+                .ignoresSafeArea()
+
             // Tall dark glass card that fills almost the entire screen.
             darkGlassCard
                 .padding(.horizontal, 12)
@@ -84,8 +90,11 @@ struct AuthSheetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .preferredColorScheme(.dark)
         .onAppear {
+            mode = startInSignup ? .signup : .login
             if let saved = UserDefaults.standard.string(forKey: rememberEmailKey), !saved.isEmpty {
                 email = saved
+            } else if UserDefaults.standard.bool(forKey: Self.preferTestAccountKey) {
+                email = SphereTestAccount.email
             }
         }
         .fullScreenCover(isPresented: $showVerifyCode) {
@@ -154,130 +163,119 @@ struct AuthSheetView: View {
 
     private var darkGlassCard: some View {
         VStack(spacing: 0) {
-            // Top header with title + close handle.
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(title)
-                        .font(.system(size: 30, weight: .bold))
+                        .font(.system(size: 32, weight: .heavy, design: .rounded))
                         .foregroundStyle(.white)
                     Text(subtitle)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Color.white.opacity(0.65))
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundStyle(Color.white.opacity(0.55))
                 }
                 Spacer()
                 Button(action: onDismiss) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 32, height: 32)
-                        .background(Color.white.opacity(0.10), in: Circle())
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.7))
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(Color.white.opacity(0.08)))
+                        .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 0.8))
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 22)
-            .padding(.top, 22)
-            .padding(.bottom, 18)
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
 
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 14) {
+                VStack(spacing: 16) {
                     segmentedSwitcher
-                        .padding(.horizontal, 18)
-                        .padding(.top, 4)
+                        .padding(.horizontal, 20).padding(.top, 2)
 
                     if let err = authService.authError, !err.isEmpty {
-                        Text(err)
-                            .font(.caption)
-                            .foregroundStyle(Color.red.opacity(0.95))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 22)
+                        Text(err).font(.caption).foregroundStyle(Color.red.opacity(0.95))
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 24)
                     }
 
-                    formFields
-                        .padding(.horizontal, 18)
+                    formFields.padding(.horizontal, 20)
+                    submitButton.padding(.horizontal, 20).padding(.top, 6)
+                    orDivider.padding(.horizontal, 20).padding(.vertical, 2)
+                    googleButton.padding(.horizontal, 20)
+                    qrSignInButton.padding(.horizontal, 20)
 
-                    submitButton
-                        .padding(.horizontal, 18)
-                        .padding(.top, 4)
-
-                    orDivider
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 4)
-
-                    googleButton
-                        .padding(.horizontal, 18)
-
-                    qrSignInButton
-                        .padding(.horizontal, 18)
+                    if mode == .login, SphereTestAccount.isConfigured {
+                        testAccountButton.padding(.horizontal, 20)
+                    }
 
                     if let signupMessage {
-                        Text(signupMessage)
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.7))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 22)
+                        Text(signupMessage).font(.caption).foregroundStyle(.white.opacity(0.7))
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 24)
                     }
 
-                    Color.clear.frame(height: 28)
-                }
-                .padding(.bottom, 12)
+                    Color.clear.frame(height: 32)
+                }.padding(.bottom, 12)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(
             ZStack {
-                // Dark glass effect: thinMaterial tinted dark to be readable.
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .fill(Color.black.opacity(0.55))
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 32, style: .continuous).fill(.ultraThinMaterial)
+                RoundedRectangle(cornerRadius: 32, style: .continuous).fill(Color.black.opacity(0.65))
+                RoundedRectangle(cornerRadius: 32, style: .continuous).fill(
+                    LinearGradient(colors: [accent.opacity(0.06), .clear, .clear], startPoint: .top, endPoint: .bottom))
+                RoundedRectangle(cornerRadius: 32, style: .continuous).strokeBorder(
+                    LinearGradient(colors: [Color.white.opacity(0.14), Color.white.opacity(0.04)], startPoint: .top, endPoint: .bottom), lineWidth: 0.8)
             }
         )
         .overlay(alignment: .top) {
-            // Drag handle (visual only — actual swipe-to-dismiss is disabled).
-            Capsule()
-                .fill(Color.white.opacity(0.35))
-                .frame(width: 38, height: 4)
-                .padding(.top, 8)
+            Capsule().fill(Color.white.opacity(0.3)).frame(width: 40, height: 5).padding(.top, 10)
         }
     }
 
     // MARK: - Segmented switcher
 
     private var segmentedSwitcher: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 0) {
             segmentButton(title: isEnglish ? "Log In" : "Вход", isSelected: mode == .login) {
-                withAnimation(.easeInOut(duration: 0.2)) { mode = .login }
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) { mode = .login }
             }
             segmentButton(title: isEnglish ? "Sign Up" : "Регистрация", isSelected: mode == .signup) {
-                withAnimation(.easeInOut(duration: 0.2)) { mode = .signup }
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) { mode = .signup }
             }
         }
         .padding(4)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.08))
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.06))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.8)
         )
     }
 
     private func segmentButton(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(isSelected ? Color.white : Color.white.opacity(0.65))
+                .font(.system(size: 15, weight: isSelected ? .semibold : .medium))
+                .foregroundStyle(isSelected ? .white : Color.white.opacity(0.5))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+                .padding(.vertical, 11)
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(isSelected ? Color.white.opacity(0.15) : Color.clear)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(isSelected ? Color.white.opacity(0.14) : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(
+                            isSelected ? Color.white.opacity(0.18) : Color.clear,
+                            lineWidth: 0.8
+                        )
                 )
         }
         .buttonStyle(.plain)
+        .scaleEffect(isSelected ? 1.0 : 0.97)
+        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: isSelected)
     }
 
     // MARK: - Fields
@@ -384,20 +382,40 @@ struct AuthSheetView: View {
         Button(action: submitPrimary) {
             HStack(spacing: 8) {
                 if isBusy {
-                    ProgressView()
-                        .tint(.white)
+                    ProgressView().tint(.white)
                 }
                 Text(mode == .login ? signInButtonTitle : signUpButtonTitle)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 17, weight: .bold))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.vertical, 15)
             .foregroundStyle(.white)
-            .background(primaryBlueGradient, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .shadow(color: Color.blue.opacity(0.30), radius: 16, x: 0, y: 6)
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(LinearGradient(
+                            colors: [accent.opacity(0.9), accent.opacity(0.55)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing))
+                    // Subtle shimmer overlay
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(LinearGradient(
+                            colors: [.white.opacity(0.15), .clear, .white.opacity(0.05)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing))
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.2), lineWidth: 0.8)
+            )
+            .shadow(color: accent.opacity(0.4), radius: 20, x: 0, y: 8)
         }
         .buttonStyle(.plain)
         .disabled(isBusy)
+        .opacity(isBusy ? 0.7 : 1)
+        .scaleEffect(isBusy ? 0.98 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isBusy)
     }
 
     private var orDivider: some View {
@@ -416,11 +434,7 @@ struct AuthSheetView: View {
                 if isSigningInWithGoogle {
                     ProgressView().tint(.white)
                 } else {
-                    Image("google")
-                        .renderingMode(.original)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 18, height: 18)
+                    Image("google").renderingMode(.original).resizable().scaledToFit().frame(width: 20, height: 20)
                 }
                 Text(googleTitle)
                     .font(.system(size: 16, weight: .semibold))
@@ -430,25 +444,52 @@ struct AuthSheetView: View {
             .padding(.vertical, 14)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.white.opacity(0.08))
+                    .fill(Color.white.opacity(0.06))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.8)
             )
         }
         .buttonStyle(.plain)
         .disabled(isSigningInWithGoogle)
     }
 
+    private var testAccountButton: some View {
+        Button(action: signInAsTestAccount) {
+            HStack(spacing: 12) {
+                if isSigningInWithEmail {
+                    ProgressView().tint(.white)
+                } else {
+                    Image(systemName: "person.crop.circle.badge.checkmark")
+                        .font(.system(size: 20, weight: .regular))
+                        .foregroundStyle(.white)
+                }
+                Text(isEnglish ? "Test account (Kirby)" : "Тестовый аккаунт (Kirby)")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.green.opacity(0.18))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.green.opacity(0.35), lineWidth: 0.8)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isBusy)
+    }
+
     private var qrSignInButton: some View {
-        Button {
-            showQRLogin = true
-        } label: {
+        Button { showQRLogin = true } label: {
             HStack(spacing: 12) {
                 Image(systemName: "qrcode")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundStyle(Color.white.opacity(0.8))
                 Text(isEnglish ? "Sign in with QR" : "Войти по QR-коду")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
@@ -457,11 +498,11 @@ struct AuthSheetView: View {
             .padding(.vertical, 14)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.white.opacity(0.08))
+                    .fill(Color.white.opacity(0.06))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 0.8)
             )
         }
         .buttonStyle(.plain)
@@ -530,6 +571,16 @@ struct AuthSheetView: View {
         } else {
             UserDefaults.standard.removeObject(forKey: rememberEmailKey)
         }
+    }
+
+    private func signInAsTestAccount() {
+        mode = .login
+        email = SphereTestAccount.email
+        password = SphereTestAccount.password
+        rememberMe = true
+        UserDefaults.standard.set(true, forKey: Self.preferTestAccountKey)
+        UserDefaults.standard.set(SphereTestAccount.email, forKey: rememberEmailKey)
+        submitPrimary()
     }
 
     private func submitPrimary() {
@@ -710,8 +761,8 @@ struct QRLoginSignInSheet: View {
     private var titleText: String { isEnglish ? "Sign in with QR" : "Вход по QR-коду" }
     private var instructionsText: String {
         isEnglish
-            ? "Open Sphere on a logged-in device → Settings → Privacy → \"Approve QR login\" and scan this code."
-            : "Откройте Sphere на устройстве, где вы уже вошли → Настройки → Конфиденциальность → «Подтвердить вход по QR» и отсканируйте этот код."
+            ? "Open Node on a logged-in device → Settings → Privacy → \"Approve QR login\" and scan this code."
+            : "Откройте Node на устройстве, где вы уже вошли → Настройки → Конфиденциальность → «Подтвердить вход по QR» и отсканируйте этот код."
     }
     private var refreshTitle: String { isEnglish ? "New QR" : "Новый QR" }
     private var waitingText: String {

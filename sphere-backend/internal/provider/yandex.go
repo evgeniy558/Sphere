@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,20 +15,35 @@ import (
 
 type Yandex struct {
 	token      string
+	signKey    string
 	httpClient *http.Client
 }
 
 func NewYandex(token string) *Yandex {
+	return NewYandexWithOptions(token, "", "")
+}
+
+// NewYandexWithOptions configures OAuth token, optional HMAC sign key override,
+// and optional HTTP proxy URL (helps when api.music.yandex.net geoblocks the host).
+func NewYandexWithOptions(token, signKey, proxyURL string) *Yandex {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if proxyURL != "" {
+		if u, err := url.Parse(proxyURL); err == nil {
+			transport.Proxy = http.ProxyURL(u)
+		}
+	}
 	return &Yandex{
-		token:      token,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		token:   token,
+		signKey: signKey,
+		httpClient: &http.Client{
+			Timeout:   20 * time.Second,
+			Transport: transport,
+		},
 	}
 }
 
 func (y *Yandex) Name() string { return "yandex" }
 
-// yandexImageURL builds a fetchable https URL. API often returns a host path or protocol-relative //…;
-// naïve "https://"+ would yield https:////… which breaks image loaders.
 func yandexImageURL(coverURI string) string {
 	u := strings.TrimSpace(coverURI)
 	if u == "" {
@@ -42,10 +58,41 @@ func yandexImageURL(coverURI string) string {
 	return "https://" + u
 }
 
-func (y *Yandex) apiGet(ctx context.Context, path string) (*http.Response, error) {
-	req, _ := http.NewRequestWithContext(ctx, "GET", "https://api.music.yandex.net"+path, nil)
+func (y *Yandex) apiRequest(ctx context.Context, method, path string, query url.Values) (*http.Response, error) {
+	u := "https://api.music.yandex.net" + path
+	if len(query) > 0 {
+		u += "?" + query.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u, nil)
+	if err != nil {
+		return nil, err
+	}
 	req.Header.Set("Authorization", "OAuth "+y.token)
+	req.Header.Set("X-Yandex-Music-Client", yandexClientHeader)
+	req.Header.Set("Accept", "application/json")
 	return y.httpClient.Do(req)
+}
+
+func (y *Yandex) apiGet(ctx context.Context, path string) (*http.Response, error) {
+	return y.apiRequest(ctx, http.MethodGet, path, nil)
+}
+
+func (y *Yandex) decodeAPI(resp *http.Response, dest any) error {
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode == http.StatusUnavailableForLegalReasons {
+		return fmt.Errorf("yandex music unavailable from this region (HTTP 451); set YANDEX_HTTP_PROXY to a RU egress")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("yandex api %s: HTTP %d: %s", resp.Request.URL.Path, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	if dest == nil {
+		return nil
+	}
+	return json.Unmarshal(body, dest)
 }
 
 func (y *Yandex) Search(ctx context.Context, query string, limit int) (*model.SearchResult, error) {
@@ -56,7 +103,6 @@ func (y *Yandex) Search(ctx context.Context, query string, limit int) (*model.Se
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
 	var yaResp struct {
 		Result struct {
@@ -74,7 +120,7 @@ func (y *Yandex) Search(ctx context.Context, query string, limit int) (*model.Se
 			} `json:"playlists"`
 		} `json:"result"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&yaResp); err != nil {
+	if err := y.decodeAPI(resp, &yaResp); err != nil {
 		return nil, err
 	}
 
@@ -95,16 +141,15 @@ func (y *Yandex) Search(ctx context.Context, query string, limit int) (*model.Se
 }
 
 func (y *Yandex) GetTrack(ctx context.Context, id string) (*model.Track, error) {
-	resp, err := y.apiGet(ctx, "/tracks/"+id)
+	resp, err := y.apiGet(ctx, "/tracks/"+url.PathEscape(id))
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
 	var yaResp struct {
 		Result []yaTrack `json:"result"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&yaResp); err != nil {
+	if err := y.decodeAPI(resp, &yaResp); err != nil {
 		return nil, err
 	}
 	if len(yaResp.Result) == 0 {
@@ -115,52 +160,91 @@ func (y *Yandex) GetTrack(ctx context.Context, id string) (*model.Track, error) 
 }
 
 func (y *Yandex) GetTrackStreamURL(ctx context.Context, id string) (string, error) {
-	resp, err := y.apiGet(ctx, "/tracks/"+id+"/download-info")
+	if u, err := y.getFileInfoStreamURL(ctx, id); err == nil && u != "" {
+		return u, nil
+	}
+	return y.getDownloadInfoStreamURL(ctx, id)
+}
+
+// getFileInfoStreamURL uses the signed /get-file-info endpoint (newer Android/Web flow).
+func (y *Yandex) getFileInfoStreamURL(ctx context.Context, id string) (string, error) {
+	sign := yandexSignRequest(id, y.signKey)
+	q := url.Values{
+		"ts":         {fmt.Sprint(sign.Timestamp)},
+		"trackId":    {yandexNumericTrackID(id)},
+		"quality":    {"hq"},
+		"codecs":     {"mp3,aac,he-aac"},
+		"transports": {"raw"},
+		"sign":       {sign.Value},
+	}
+	resp, err := y.apiRequest(ctx, http.MethodGet, "/get-file-info", q)
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
-
-	var yaResp struct {
-		Result []struct {
-			DownloadInfoURL string `json:"downloadInfoUrl"`
-			Codec           string `json:"codec"`
-			Bitrate         int    `json:"bitrateInKbps"`
-		} `json:"result"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&yaResp); err != nil {
+	var payload yandexFileInfoResponse
+	if err := y.decodeAPI(resp, &payload); err != nil {
 		return "", err
 	}
-	if len(yaResp.Result) == 0 {
-		return "", fmt.Errorf("no download info")
+	if u := yandexFirstFileInfoURL(&payload); u != "" {
+		return u, nil
 	}
-	return yaResp.Result[0].DownloadInfoURL, nil
+	return "", fmt.Errorf("get-file-info: no urls")
+}
+
+// getDownloadInfoStreamURL uses /tracks/{id}/download-info (HLS direct or XML → get-mp3).
+func (y *Yandex) getDownloadInfoStreamURL(ctx context.Context, id string) (string, error) {
+	sign := yandexSignRequest(id, y.signKey)
+	q := url.Values{
+		"can_use_streaming": {"true"},
+		"ts":                {fmt.Sprint(sign.Timestamp)},
+		"sign":              {sign.Value},
+	}
+	resp, err := y.apiRequest(ctx, http.MethodGet, "/tracks/"+url.PathEscape(id)+"/download-info", q)
+	if err != nil {
+		return "", err
+	}
+
+	var yaResp struct {
+		Result []yandexDownloadEntry `json:"result"`
+	}
+	if err := y.decodeAPI(resp, &yaResp); err != nil {
+		return "", err
+	}
+	entry := yandexPickDownloadEntry(yaResp.Result)
+	if entry == nil {
+		return "", fmt.Errorf("no download info for track %s", id)
+	}
+
+	// Newer tracks expose a direct HLS/MP4 URL in downloadInfoUrl.
+	if entry.Direct && entry.DownloadInfoURL != "" {
+		return entry.DownloadInfoURL, nil
+	}
+
+	return yandexResolveDownloadInfoURL(y.httpClient, entry.DownloadInfoURL)
 }
 
 func (y *Yandex) GetLyrics(ctx context.Context, id string) (*model.Lyrics, error) {
-	resp, err := y.apiGet(ctx, "/tracks/"+id+"/lyrics")
+	resp, err := y.apiGet(ctx, "/tracks/"+url.PathEscape(id)+"/lyrics")
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
 	var yaResp struct {
 		Result struct {
 			FullLyrics string `json:"fullLyrics"`
 		} `json:"result"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&yaResp); err != nil {
+	if err := y.decodeAPI(resp, &yaResp); err != nil {
 		return nil, err
 	}
 	return &model.Lyrics{TrackID: id, Provider: "yandex", Text: yaResp.Result.FullLyrics}, nil
 }
 
 func (y *Yandex) GetArtist(ctx context.Context, id string) (*model.Artist, error) {
-	resp, err := y.apiGet(ctx, "/artists/"+id+"/brief-info")
+	resp, err := y.apiGet(ctx, "/artists/"+url.PathEscape(id)+"/brief-info")
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
 	var yaResp struct {
 		Result struct {
@@ -168,7 +252,7 @@ func (y *Yandex) GetArtist(ctx context.Context, id string) (*model.Artist, error
 			Tracks []yaTrack `json:"popularTracks"`
 		} `json:"result"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&yaResp); err != nil {
+	if err := y.decodeAPI(resp, &yaResp); err != nil {
 		return nil, err
 	}
 	artist := yaResp.Result.Artist.toArtist()
@@ -179,11 +263,10 @@ func (y *Yandex) GetArtist(ctx context.Context, id string) (*model.Artist, error
 }
 
 func (y *Yandex) GetAlbum(ctx context.Context, id string) (*model.Album, error) {
-	resp, err := y.apiGet(ctx, "/albums/"+id+"/with-tracks")
+	resp, err := y.apiGet(ctx, "/albums/"+url.PathEscape(id)+"/with-tracks")
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
 	var yaResp struct {
 		Result struct {
@@ -191,7 +274,7 @@ func (y *Yandex) GetAlbum(ctx context.Context, id string) (*model.Album, error) 
 			Volumes [][]yaTrack `json:"volumes"`
 		} `json:"result"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&yaResp); err != nil {
+	if err := y.decodeAPI(resp, &yaResp); err != nil {
 		return nil, err
 	}
 	album := yaResp.Result.yaAlbum.toAlbum()
@@ -204,11 +287,10 @@ func (y *Yandex) GetAlbum(ctx context.Context, id string) (*model.Album, error) 
 }
 
 func (y *Yandex) GetPlaylist(ctx context.Context, id string) (*model.Playlist, error) {
-	resp, err := y.apiGet(ctx, "/playlists/"+id)
+	resp, err := y.apiGet(ctx, "/playlists/"+url.PathEscape(id))
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 
 	var yaResp struct {
 		Result struct {
@@ -218,12 +300,14 @@ func (y *Yandex) GetPlaylist(ctx context.Context, id string) (*model.Playlist, e
 			} `json:"tracks"`
 		} `json:"result"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&yaResp); err != nil {
+	if err := y.decodeAPI(resp, &yaResp); err != nil {
 		return nil, err
 	}
 	playlist := yaResp.Result.yaPlaylist.toPlaylist()
 	for _, item := range yaResp.Result.Tracks {
-		playlist.Tracks = append(playlist.Tracks, item.Track.toTrack())
+		if item.Track.ID != "" {
+			playlist.Tracks = append(playlist.Tracks, item.Track.toTrack())
+		}
 	}
 	return &playlist, nil
 }
@@ -267,9 +351,9 @@ func (a yaArtist) toArtist() model.Artist {
 }
 
 type yaAlbum struct {
-	ID       int    `json:"id"`
-	Title    string `json:"title"`
-	CoverURI string `json:"coverUri"`
+	ID       int        `json:"id"`
+	Title    string     `json:"title"`
+	CoverURI string     `json:"coverUri"`
 	Artists  []yaArtist `json:"artists"`
 }
 

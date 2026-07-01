@@ -1,0 +1,12 @@
+name = "sphere-backend"
+main = "cloudflare/worker.js"
+compatibility_date = "2026-06-04"
+workers_dev = true
+
+[vars]
+# Public origin for proxy mode (without trailing slash), for example:
+# BACKEND_ORIGIN = "https://sphere-api.example.com"
+#
+# You should set this in Cloudflare dashboard env vars instead of committing
+# a real value into git.
+BACKEND_ORIGIN = ""

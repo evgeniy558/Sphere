@@ -40,8 +40,10 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		title = header.Filename
 	}
 	artistName := r.FormValue("artist_name")
+	album := r.FormValue("album")
+	lyrics := r.FormValue("lyrics")
 
-	upload, err := h.svc.Upload(r.Context(), userID, title, artistName, header.Filename, header.Size, file)
+	upload, err := h.svc.Upload(r.Context(), userID, title, artistName, album, lyrics, header.Filename, header.Size, file)
 	if err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
 		return

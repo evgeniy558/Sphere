@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 import Combine
 
-/// Default public URL of the Sphere Go backend. Override via Settings → Developer Menu.
+/// Default public URL of the Node Go backend. Override via Settings → Developer Menu.
 /// Render.com Web Service hosting the Go backend from kirby-swift/sphere-backend.
 ///
 /// Outgoing mail (signup codes) uses the `MAIL_FROM` env on the Go service; verify
@@ -34,7 +34,7 @@ enum SphereAPIError: Error, LocalizedError {
     }
 }
 
-/// Client for the Sphere Go backend. Singleton, shared across the app.
+/// Client for the Node Go backend. Singleton, shared across the app.
 final class SphereAPIClient: ObservableObject {
     static let shared = SphereAPIClient()
 
@@ -373,7 +373,7 @@ final class SphereAPIClient: ObservableObject {
         if userId.hasPrefix("email_") {
             if let p = SphereBackendPasswordKeychain.getBackendPassword(forEmail: email) {
                 do { _ = try await login(email: email, password: p) } catch {
-                    print("[Sphere] Backend email login failed: \(error.localizedDescription)")
+                    print("[Node] Backend email login failed: \(error.localizedDescription)")
                 }
             }
             return
@@ -387,7 +387,7 @@ final class SphereAPIClient: ObservableObject {
             } catch {
             }
             do { _ = try await login(email: email, password: password) } catch {
-                print("[Sphere] Backend auth (sphere.*) failed: \(error.localizedDescription)")
+                print("[Node] Backend auth (sphere.*) failed: \(error.localizedDescription)")
             }
         }
     }
@@ -416,6 +416,15 @@ final class SphereAPIClient: ObservableObject {
         return r.streamURL
     }
 
+    /// Wakes a sleeping Render instance before playback (free tier cold start can take 30–60s).
+    func wakeBackend() async {
+        guard let url = URL(string: baseURL + "/health") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.timeoutInterval = 75
+        _ = try? await session.data(for: req)
+    }
+
     func getLyrics(provider: String, id: String) async throws -> String? {
         let r: LyricsResponse = try await request(
             path: "/tracks/\(escape(provider))/\(escape(id))/lyrics",
@@ -438,10 +447,62 @@ final class SphereAPIClient: ObservableObject {
         try await request(path: "/albums/\(escape(provider))/\(escape(id))", method: "GET", requiresAuth: false)
     }
 
+    func getPlaylist(provider: String, id: String) async throws -> CatalogPlaylist {
+        try await request(path: "/playlists/\(escape(provider))/\(escape(id))", method: "GET", requiresAuth: false)
+    }
+
     // MARK: - Recommendations + history
 
     func getRecommendations() async throws -> RecommendationsResponse {
         try await request(path: "/recommendations", method: "GET", session: longRequestSession, resourceTimeout: 300)
+    }
+
+    // MARK: - Discover swipe deck
+
+    struct DiscoverFeedResponse: Decodable {
+        let tracks: [CatalogTrack]
+        let cursor: String?
+    }
+
+    /// Pulls the swipe deck. `excluded` should be `provider:id` keys.
+    func getDiscoverFeed(limit: Int = 20, excluded: [String] = []) async throws -> [CatalogTrack] {
+        var items: [URLQueryItem] = [URLQueryItem(name: "limit", value: String(limit))]
+        if !excluded.isEmpty {
+            items.append(URLQueryItem(name: "excluded", value: excluded.joined(separator: ",")))
+        }
+        let resp: DiscoverFeedResponse = try await request(path: "/discover/feed", method: "GET", query: items)
+        return resp.tracks
+    }
+
+    /// Records swipe feedback. `action` is `"like"` or `"skip"`.
+    func sendDiscoverFeedback(track: CatalogTrack, action: String) async {
+        let body: [String: Any] = [
+            "provider": track.provider,
+            "id": track.id,
+            "action": action,
+            "title": track.title,
+            "artist": track.artist,
+        ]
+        do {
+            let _: EmptyResponse = try await request(path: "/discover/feedback", method: "POST", body: body)
+        } catch {
+            // Non-fatal: feedback is best-effort.
+        }
+    }
+
+    // MARK: - Node Studio summary
+
+    struct StudioSummary: Decodable {
+        let listening_minutes: Int
+        let liked_tracks: Int
+        let recent_artists: Int
+        let top_genres: [String]
+        let top_artists: [String]
+        let history_entries: Int
+    }
+
+    func getStudioSummary() async throws -> StudioSummary {
+        try await request(path: "/studio/summary", method: "GET")
     }
 
     /// Wakes a sleeping Render free tier before heavier calls. Best-effort; does not throw on final failure.
@@ -871,6 +932,288 @@ final class SphereAPIClient: ObservableObject {
     func sendTrackShare(chatID: String, payload: [String: Any]) async throws -> BackendChatMessage {
         let body: [String: Any] = ["kind": "track_share", "payload": payload]
         return try await request(path: "/chats/\(escape(chatID))/messages", method: "POST", body: body)
+    }
+
+    // MARK: - Artist albums & fans
+
+    struct ArtistAlbumsResponse: Decodable {
+        let albums: [CatalogAlbum]
+    }
+
+    func getArtistAlbums(provider: String, id: String) async throws -> [CatalogAlbum] {
+        let r: ArtistAlbumsResponse = try await request(
+            path: "/artists/\(escape(provider))/\(escape(id))/albums",
+            method: "GET",
+            requiresAuth: false
+        )
+        return r.albums
+    }
+
+    func getFansAlsoLike(provider: String, id: String) async throws -> [CatalogArtist] {
+        let r: FansAlsoLikeResponse = try await request(
+            path: "/artists/\(escape(provider))/\(escape(id))/fans-also-like",
+            method: "GET",
+            requiresAuth: false
+        )
+        return r.artists
+    }
+
+    // MARK: - Daily mixes
+
+    func getDailyMixes() async throws -> [DailyMix] {
+        let r: DailyMixesResponse = try await request(path: "/daily-mixes", method: "GET")
+        return r.mixes
+    }
+
+    // MARK: - Download manifests
+
+    func getAlbumDownloadManifest(provider: String, id: String) async throws -> [DownloadManifestItem] {
+        let r: DownloadManifestResponse = try await request(
+            path: "/albums/\(escape(provider))/\(escape(id))/download-manifest",
+            method: "GET"
+        )
+        return r.tracks
+    }
+
+    func getPlaylistDownloadManifest(provider: String, id: String) async throws -> [DownloadManifestItem] {
+        let r: DownloadManifestResponse = try await request(
+            path: "/playlists/\(escape(provider))/\(escape(id))/download-manifest",
+            method: "GET"
+        )
+        return r.tracks
+    }
+
+    // MARK: - Karaoke
+
+    func prepareKaraoke(provider: String, id: String) async throws {
+        let _: KaraokePrepareResponse = try await request(
+            path: "/tracks/\(escape(provider))/\(escape(id))/karaoke/prepare",
+            method: "POST",
+            body: [:]
+        )
+    }
+
+    func karaokeStreamURL(provider: String, id: String) -> URL? {
+        URL(string: baseURL + "/tracks/\(escape(provider))/\(escape(id))/karaoke")
+    }
+
+    func pollKaraokeStatus(provider: String, id: String) async throws -> String {
+        guard let url = karaokeStreamURL(provider: provider, id: id) else { throw SphereAPIError.invalidURL }
+        guard let token = jwt else { throw SphereAPIError.notAuthenticated }
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse else { throw SphereAPIError.http(status: 0, message: nil) }
+        if http.statusCode == 200, http.value(forHTTPHeaderField: "Content-Type")?.contains("audio") == true {
+            return "ready"
+        }
+        if let obj = try? JSONDecoder().decode(KaraokeStatusResponse.self, from: data) {
+            return obj.status
+        }
+        return "processing"
+    }
+
+    // MARK: - Wave
+
+    func waveStart() async throws -> WaveSessionResponse {
+        try await request(path: "/wave/start", method: "POST", body: [:])
+    }
+
+    func waveNext(sessionID: String, count: Int = 10) async throws -> [CatalogTrack] {
+        let r: WaveNextResponse = try await request(
+            path: "/wave/next",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "session_id", value: sessionID),
+                URLQueryItem(name: "count", value: String(count)),
+            ]
+        )
+        return r.tracks.map(\.track)
+    }
+
+    func waveRecordEvent(sessionID: String, provider: String, trackID: String, eventType: String, positionSeconds: Double = 0) async throws {
+        let body: [String: Any] = [
+            "session_id": sessionID,
+            "provider": provider,
+            "track_id": trackID,
+            "event_type": eventType,
+            "position_seconds": positionSeconds,
+        ]
+        let _: EmptyResponse = try await request(path: "/wave/event", method: "POST", body: body)
+    }
+
+    // MARK: - Group playlists
+
+    func createGroupPlaylist(title: String, description: String = "", isPublic: Bool = false) async throws -> GroupPlaylist {
+        let body: [String: Any] = ["title": title, "description": description, "is_public": isPublic]
+        return try await request(path: "/playlists/create", method: "POST", body: body)
+    }
+
+    func listMyGroupPlaylists() async throws -> [GroupPlaylist] {
+        try await request(path: "/playlists/mine", method: "GET")
+    }
+
+    func getGroupPlaylist(id: String) async throws -> GroupPlaylistDetail {
+        try await request(path: "/playlists/user/\(escape(id))", method: "GET")
+    }
+
+    func addTrackToGroupPlaylist(playlistID: String, track: CatalogTrack) async throws {
+        let body: [String: Any] = [
+            "provider": track.provider,
+            "track_id": track.id,
+            "title": track.title,
+            "artist": track.artist,
+            "cover_url": track.coverURL ?? "",
+            "duration": track.duration,
+        ]
+        let _: EmptyResponse = try await request(
+            path: "/playlists/user/\(escape(playlistID))/tracks",
+            method: "POST",
+            body: body
+        )
+    }
+
+    // MARK: - Blends
+
+    func createBlend(title: String, memberIDs: [String]) async throws -> BlendDetail {
+        let body: [String: Any] = ["title": title, "member_ids": memberIDs]
+        return try await request(path: "/blends", method: "POST", body: body)
+    }
+
+    func listBlends() async throws -> [BlendSummary] {
+        let r: BlendsListResponse = try await request(path: "/blends", method: "GET")
+        return r.blends
+    }
+
+    func getBlend(id: String) async throws -> BlendDetail {
+        try await request(path: "/blends/\(escape(id))", method: "GET")
+    }
+
+    func acceptBlendInvite(id: String) async throws {
+        let _: EmptyResponse = try await request(path: "/blends/\(escape(id))/accept", method: "POST")
+    }
+
+    // MARK: - Jam
+
+    func createJamSession(title: String = "") async throws -> JamSession {
+        let body: [String: Any] = ["title": title]
+        return try await request(path: "/jam/sessions", method: "POST", body: body)
+    }
+
+    func getJamSession(id: String) async throws -> JamSession {
+        try await request(path: "/jam/sessions/\(escape(id))", method: "GET")
+    }
+
+    func joinJamSession(id: String) async throws {
+        let _: EmptyResponse = try await request(path: "/jam/sessions/\(escape(id))/join", method: "POST")
+    }
+
+    func getJamQueue(id: String) async throws -> [JamQueueItem] {
+        let r: JamQueueResponse = try await request(path: "/jam/sessions/\(escape(id))/queue", method: "GET")
+        return r.queue
+    }
+
+    func addToJamQueue(sessionId: String, provider: String, trackId: String) async throws {
+        let _: EmptyResponse = try await request(path: "/jam/sessions/\(escape(sessionId))/queue", method: "POST", body: ["provider": provider, "track_id": trackId])
+    }
+
+    func removeFromJamQueue(sessionId: String, itemId: String) async throws {
+        let _: EmptyResponse = try await request(path: "/jam/sessions/\(escape(sessionId))/queue/\(escape(itemId))", method: "DELETE")
+    }
+
+    func voteJamTrack(sessionId: String, itemId: String, vote: String) async throws {
+        let _: EmptyResponse = try await request(path: "/jam/sessions/\(escape(sessionId))/queue/\(escape(itemId))/vote", method: "POST", body: ["vote": vote])
+    }
+
+    func skipJamTrack(sessionId: String) async throws {
+        let _: EmptyResponse = try await request(path: "/jam/sessions/\(escape(sessionId))/skip", method: "POST")
+    }
+
+    func nextJamTrack(sessionId: String) async throws {
+        let _: EmptyResponse = try await request(path: "/jam/sessions/\(escape(sessionId))/next", method: "POST")
+    }
+
+    func leaveJamSession(id: String) async throws {
+        let _: EmptyResponse = try await request(path: "/jam/sessions/\(escape(id))/leave", method: "POST")
+    }
+
+    func inviteToJam(sessionId: String, userId: String) async throws {
+        let _: EmptyResponse = try await request(path: "/jam/sessions/\(escape(sessionId))/invite", method: "POST", body: ["user_id": userId])
+    }
+
+    // MARK: - Blends (extended)
+
+    func declineBlend(id: String) async throws {
+        let _: EmptyResponse = try await request(path: "/blends/\(escape(id))/decline", method: "POST")
+    }
+
+    func deleteBlend(id: String) async throws {
+        let _: EmptyResponse = try await request(path: "/blends/\(escape(id))", method: "DELETE")
+    }
+
+    func regenerateBlend(id: String) async throws -> BlendDetail {
+        try await request(path: "/blends/\(escape(id))/regenerate", method: "POST")
+    }
+
+    // MARK: - My Wave (extended)
+
+    func getWaveProfile() async throws -> WaveProfile {
+        try await request(path: "/wave/profile", method: "GET")
+    }
+
+    // MARK: - Push Notifications
+
+    func registerDevice(token: String) async throws {
+        let _: EmptyResponse = try await request(path: "/devices", method: "POST", body: ["token": token, "platform": "ios"])
+    }
+
+    func unregisterDevice(token: String) async throws {
+        let encoded = token.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? token
+        let _: EmptyResponse = try await request(path: "/devices/\(encoded)", method: "DELETE")
+    }
+
+    // MARK: - Uploads
+
+    func listUploads() async throws -> [UserUpload] {
+        try await request(path: "/uploads", method: "GET")
+    }
+
+    func uploadAudioFile(data: Data, fileName: String, title: String, artistName: String, mimeType: String = "audio/mpeg") async throws -> UserUpload {
+        guard let token = jwt else { throw SphereAPIError.notAuthenticated }
+        guard let url = URL(string: baseURL + "/uploads") else { throw SphereAPIError.invalidURL }
+
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        func append(_ s: String) { body.append(s.data(using: .utf8)!) }
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"title\"\r\n\r\n")
+        append("\(title)\r\n")
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"artist_name\"\r\n\r\n")
+        append("\(artistName)\r\n")
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n")
+        append("Content-Type: \(mimeType)\r\n\r\n")
+        body.append(data)
+        append("\r\n--\(boundary)--\r\n")
+        req.httpBody = body
+
+        let (respData, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let msg = String(data: respData, encoding: .utf8)
+            throw SphereAPIError.http(status: (response as? HTTPURLResponse)?.statusCode ?? 0, message: msg)
+        }
+        return try decoder.decode(UserUpload.self, from: respData)
+    }
+
+    func deleteUpload(id: String) async throws {
+        let _: EmptyResponse = try await request(path: "/uploads/\(escape(id))", method: "DELETE")
     }
 
     func connectChatWebSocket() throws -> URLSessionWebSocketTask {

@@ -90,75 +90,80 @@ struct CatalogTrackCard: View {
     var onArtistTap: (() -> Void)? = nil
 
     @ObservedObject private var downloads = DownloadsStore.shared
+    @State private var isPressed = false
 
     var body: some View {
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 AsyncImage(url: catalogRemoteImageURL(track.coverURL)) { phase in
                     switch phase {
                     case .success(let image):
                         image.resizable().scaledToFill()
                     case .empty:
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(isDarkMode ? Color(white: 0.18) : Color(white: 0.88))
-                            .overlay(ProgressView())
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color.white.opacity(0.08))
+                            .overlay(ProgressView().tint(.white))
                     case .failure:
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(isDarkMode ? Color(white: 0.18) : Color(white: 0.88))
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Color.white.opacity(0.08))
                             .overlay(
                                 Image(systemName: "music.note")
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.white.opacity(0.3))
                                     .font(.title2)
                             )
                     @unknown default:
                         EmptyView()
                     }
                 }
-                .frame(width: 140, height: 140)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(alignment: .topLeading) {
+                .frame(width: 148, height: 148)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+                .overlay(alignment: .topTrailing) {
                     if downloads.isDownloaded(provider: track.provider, id: track.id) {
-                        DownloadedBadge(size: 16)
-                            .padding(.top, 6)
-                            .padding(.leading, 6)
-                            .shadow(color: .black.opacity(0.35), radius: 3, x: 0, y: 1)
+                        DownloadedBadge(size: 16).padding(8)
                     }
                 }
 
                 Text(track.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(isDarkMode ? .white : .primary)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
                     .lineLimit(1)
-                    .frame(width: 140, alignment: .leading)
+                    .frame(width: 148, alignment: .leading)
 
                 Group {
                     if let onArtistTap = onArtistTap {
                         Button(action: onArtistTap) {
                             Text(track.artist)
-                                .font(.system(size: 12))
-                                .foregroundStyle(.secondary)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.55))
                                 .lineLimit(1)
                         }
                         .buttonStyle(.plain)
                     } else {
                         Text(track.artist)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.55))
                             .lineLimit(1)
                     }
                 }
-                .frame(width: 140, alignment: .leading)
+                .frame(width: 148, alignment: .leading)
 
                 HStack(spacing: 4) {
-                    ServiceIconBadge(provider: track.provider, size: 12)
+                    ServiceIconBadge(provider: track.provider, size: 11)
                     Text(track.durationFormatted)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.45))
                 }
-                .frame(width: 140, alignment: .leading)
+                .frame(width: 148, alignment: .leading)
             }
+            .padding(10)
+            .libraryGlassCard(cornerRadius: 18)
+            .scaleEffect(isPressed ? 0.96 : 1.0)
         }
         .buttonStyle(.plain)
+        .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { isPressed = pressing }
+        }, perform: {})
     }
 }
 
@@ -170,56 +175,65 @@ struct CatalogAlbumCard: View {
     let isDarkMode: Bool
     var onTap: (() -> Void)? = nil
 
+    @State private var isPressed = false
+
     var body: some View {
         Button { onTap?() } label: {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             AsyncImage(url: catalogRemoteImageURL(album.coverURL)) { phase in
                 switch phase {
                 case .success(let image):
                     image.resizable().scaledToFill()
                 case .empty:
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(isDarkMode ? Color(white: 0.18) : Color(white: 0.88))
-                        .overlay(ProgressView())
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                        .overlay(ProgressView().tint(.white))
                 case .failure:
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(isDarkMode ? Color(white: 0.18) : Color(white: 0.88))
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
                         .overlay(
                             Image(systemName: "square.stack")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.white.opacity(0.3))
                                 .font(.title2)
                         )
                 @unknown default:
                     EmptyView()
                 }
             }
-            .frame(width: 140, height: 140)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .frame(width: 148, height: 148)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
 
             Text(album.title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isDarkMode ? .white : .primary)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
                 .lineLimit(1)
-                .frame(width: 140, alignment: .leading)
+                .frame(width: 148, alignment: .leading)
 
             Text(album.artist)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white.opacity(0.55))
                 .lineLimit(1)
-                .frame(width: 140, alignment: .leading)
+                .frame(width: 148, alignment: .leading)
 
             HStack(spacing: 4) {
-                ServiceIconBadge(provider: album.provider, size: 12)
+                ServiceIconBadge(provider: album.provider, size: 11)
                 if let count = album.tracks?.count, count > 0 {
                     Text("\(count) tracks")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.45))
                 }
             }
-            .frame(width: 140, alignment: .leading)
+            .frame(width: 148, alignment: .leading)
         }
+        .padding(10)
+        .libraryGlassCard(cornerRadius: 18)
+        .scaleEffect(isPressed ? 0.96 : 1.0)
         }
         .buttonStyle(.plain)
+        .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { isPressed = pressing }
+        }, perform: {})
     }
 }
 
@@ -231,51 +245,60 @@ struct CatalogArtistCard: View {
     let isDarkMode: Bool
     var onTap: (() -> Void)? = nil
 
+    @State private var isPressed = false
+
     var body: some View {
         Button(action: { onTap?() }) {
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
                 AsyncImage(url: catalogRemoteImageURL(artist.imageURL)) { phase in
                     switch phase {
                     case .success(let image):
                         image.resizable().scaledToFill()
                     case .empty:
                         Circle()
-                            .fill(isDarkMode ? Color(white: 0.18) : Color(white: 0.88))
-                            .overlay(ProgressView())
+                            .fill(Color.white.opacity(0.08))
+                            .overlay(ProgressView().tint(.white))
                     case .failure:
                         Circle()
-                            .fill(isDarkMode ? Color(white: 0.18) : Color(white: 0.88))
+                            .fill(Color.white.opacity(0.08))
                             .overlay(
                                 Image(systemName: "person.fill")
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.white.opacity(0.3))
                                     .font(.title3)
                             )
                     @unknown default:
                         EmptyView()
                     }
                 }
-                .frame(width: 80, height: 80)
+                .frame(width: 100, height: 100)
                 .clipShape(Circle())
+                .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 0.8))
+                .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
 
                 Text(artist.name)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(isDarkMode ? .white : .primary)
-                    .lineLimit(1)
-                    .frame(width: 80)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .frame(width: 100)
 
                 HStack(spacing: 3) {
                     ServiceIconBadge(provider: artist.provider, size: 10)
                     if let f = artist.followers, f > 0 {
                         Text(formatFollowers(f))
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.5))
                     }
                 }
-                .frame(width: 80)
+                .frame(width: 100)
             }
+            .scaleEffect(isPressed ? 0.95 : 1.0)
         }
         .buttonStyle(.plain)
         .disabled(onTap == nil)
+        .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { isPressed = pressing }
+        }, perform: {})
     }
 
     private func formatFollowers(_ count: Int64) -> String {
@@ -306,6 +329,11 @@ struct AlbumDetailView: View {
     private var albumLabel: String { isEnglish ? "Album" : "Альбом" }
     private var tracksLabel: String { isEnglish ? "Tracks" : "Треки" }
     @State private var isDownloading = false
+    @ObservedObject private var downloads = DownloadsStore.shared
+
+    private var allTracksDownloaded: Bool {
+        downloads.isCollectionFullyDownloaded(tracks: tracks)
+    }
 
     var body: some View {
         NavigationStack {
@@ -430,19 +458,20 @@ struct AlbumDetailView: View {
             .buttonStyle(.plain)
 
             Button {
-                guard !tracks.isEmpty else { return }
-                guard !isDownloading else { return }
+                guard !tracks.isEmpty, !isDownloading else { return }
                 isDownloading = true
                 Task { @MainActor in
                     defer { isDownloading = false }
-                    for t in tracks {
-                        try? await DownloadsStore.shared.download(track: t)
+                    if let items = try? await SphereAPIClient.shared.getAlbumDownloadManifest(provider: album.provider, id: album.id), !items.isEmpty {
+                        await downloads.downloadManifest(items)
+                    } else {
+                        await downloads.downloadAll(tracks: tracks)
                     }
                 }
             } label: {
-                Image(systemName: isDownloading ? "arrow.down.circle.fill" : "arrow.down.circle")
+                Image(systemName: allTracksDownloaded ? "arrow.down.circle.fill" : (isDownloading ? "arrow.down.circle.fill" : "arrow.down.circle"))
                     .font(.system(size: 24, weight: .regular))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(allTracksDownloaded ? .green : .secondary)
             }
             .buttonStyle(.plain)
             .disabled(isDownloading || tracks.isEmpty)

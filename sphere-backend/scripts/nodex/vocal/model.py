@@ -44,7 +44,6 @@ class DecoderBlock(nn.Module):
     def forward(self, x, skip):
         out = self.act(self.bn(self.deconv(x)))
         out = self.drop(out)
-        # Crop skip to match spatial dims if needed.
         if out.shape != skip.shape:
             diff_h = skip.shape[2] - out.shape[2]
             diff_w = skip.shape[3] - out.shape[3]

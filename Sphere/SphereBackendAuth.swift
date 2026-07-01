@@ -6,7 +6,7 @@ import UIKit
 
 /// Bridges `AuthService` (Supabase/Google) → `SphereAPIClient` JWT.
 ///
-/// Sphere users don't know about the Go backend — we register/login them transparently
+/// Node users don't know about the Go backend — we register/login them transparently
 /// whenever `AuthService.shared.currentProfile` is present and the backend JWT is missing.
 ///
 /// Strategy:

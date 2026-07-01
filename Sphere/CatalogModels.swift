@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - Unified catalog models for Sphere Go backend
+// MARK: - Unified catalog models for Node Go backend
 
 /// A catalog track from any provider (spotify, youtube, soundcloud, vk, yandex, deezer).
 struct CatalogTrack: Identifiable, Codable, Equatable, Hashable {
@@ -34,6 +34,34 @@ struct CatalogTrack: Identifiable, Codable, Equatable, Hashable {
 
     /// Composite key for duplication checks: "<provider>:<id>".
     var compositeKey: String { "\(provider):\(id)" }
+
+    init(
+        id: String,
+        provider: String,
+        title: String,
+        artist: String,
+        album: String? = nil,
+        coverURL: String? = nil,
+        duration: Int = 0,
+        streamURL: String? = nil,
+        previewURL: String? = nil,
+        clipURL: String? = nil,
+        genres: [String]? = nil,
+        playCount: Int64? = nil
+    ) {
+        self.id = id
+        self.provider = provider
+        self.title = title
+        self.artist = artist
+        self.album = album
+        self.coverURL = coverURL
+        self.duration = duration
+        self.streamURL = streamURL
+        self.previewURL = previewURL
+        self.clipURL = clipURL
+        self.genres = genres
+        self.playCount = playCount
+    }
 }
 
 /// A catalog artist. Returned from `/artists/{provider}/{id}` or `/artists/unified/{name}`.

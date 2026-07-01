@@ -1,12 +1,13 @@
 //
-//  SphereAudioEngine.swift
-//  Sphere
+//  NodeAudioEngine.swift
+//  Node
 //
 //  Audio engine с AVAudioEngine + AVAudioUnitEQ для эквалайзера.
 //  Заменяет прямое использование AVPlayer для воспроизведения треков.
 //
 
 import AVFoundation
+import Accelerate
 import Combine
 
 final class SphereAudioEngine: ObservableObject {
@@ -45,6 +46,8 @@ final class SphereAudioEngine: ObservableObject {
     private var segmentStartFrame: AVAudioFramePosition = 0
     /// Смещение "виртуальное" от seek, пока playerNode стоит
     private var seekOffsetFrame: AVAudioFramePosition = 0
+    private var outputLevelTapInstalled = false
+    var onOutputLevel: ((Float) -> Void)?
 
     private init() {
         setupEngine()
@@ -166,11 +169,50 @@ final class SphereAudioEngine: ObservableObject {
     }
 
     func stop() {
+        stopOutputLevelMonitoring()
         playerNode.stop()
         // Не останавливаем engine — он пригодится при следующем play()
         isPlaying = false
         segmentStartFrame = 0
         seekOffsetFrame = 0
+    }
+
+    // MARK: - Output level (home beat visuals)
+
+    func startOutputLevelMonitoring() {
+        guard !outputLevelTapInstalled else { return }
+        let format = engine.mainMixerNode.outputFormat(forBus: 0)
+        engine.mainMixerNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+            guard let self else { return }
+            let level = Self.rmsLevel(from: buffer)
+            DispatchQueue.main.async {
+                self.onOutputLevel?(level)
+            }
+        }
+        outputLevelTapInstalled = true
+    }
+
+    func stopOutputLevelMonitoring() {
+        guard outputLevelTapInstalled else { return }
+        engine.mainMixerNode.removeTap(onBus: 0)
+        outputLevelTapInstalled = false
+        onOutputLevel = nil
+    }
+
+    private static func rmsLevel(from buffer: AVAudioPCMBuffer) -> Float {
+        guard let channelData = buffer.floatChannelData else { return 0 }
+        let frameCount = Int(buffer.frameLength)
+        guard frameCount > 0 else { return 0 }
+        let channels = Int(buffer.format.channelCount)
+        var sum: Float = 0
+        for ch in 0..<channels {
+            var mean: Float = 0
+            vDSP_measqv(channelData[ch], 1, &mean, vDSP_Length(frameCount))
+            sum += sqrtf(mean)
+        }
+        let rms = sum / Float(max(channels, 1))
+        let mapped = log10f(1 + rms * 18) / log10f(19)
+        return min(max(mapped, 0), 1)
     }
 
     // MARK: - Позиция

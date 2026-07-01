@@ -86,9 +86,15 @@ services:
         sync: false
       - key: SOUNDCLOUD_CLIENT_SECRET
         sync: false
+      - key: VK_ACCESS_TOKEN
+        sync: false
       - key: VK_SERVICE_TOKEN
         sync: false
       - key: YANDEX_SERVICE_TOKEN
+        sync: false
+      - key: YANDEX_SIGN_KEY
+        sync: false
+      - key: YANDEX_HTTP_PROXY
         sync: false
       - key: GENIUS_TOKEN
         sync: false

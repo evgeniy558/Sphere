@@ -1,6 +1,6 @@
 //
 //  HomeStickySearch_SphereExport.swift
-//  Экспорт из Sphere (ContentView.swift) — липкий поиск на главной + UIKit-блюр под капсулой.
+//  Экспорт из Node (ContentView.swift) — липкий поиск на главной + UIKit-блюр под капсулой.
 //  Добавьте в таргет. Нужны: AccentColor, iOS 16+. На iOS 26 — .glassEffect у капсулы.
 //
 
@@ -291,45 +291,32 @@ struct HomeStickySearchCapsuleField: View {
     var showShadow: Bool = false
     var verticalPadding: CGFloat = 12
 
-    private var pinT: CGFloat { min(1, max(0, pinProgress)) }
-    private var libraryCardWhite: CGFloat { isDarkMode ? 0.12 : 0.92 }
-    private var libraryPinnedWhite: CGFloat { isDarkMode ? 0.07 : 1.0 }
-    private var capsuleColor: Color {
-        let w = libraryCardWhite + (libraryPinnedWhite - libraryCardWhite) * pinT
-        return Color(white: w)
-    }
-    private var textColor: Color { isDarkMode ? .white : accent }
-    private var circleFill: Color { accent }
-    private var iconColor: Color { .white }
-    private var cursorColor: Color { isDarkMode ? .white : accent }
-
     var body: some View {
         let field = TextField("", text: $text)
-            .tint(cursorColor)
+            .tint(accent)
             .padding(.leading, 52)
             .padding(.trailing, 20)
             .padding(.vertical, verticalPadding)
             .frame(maxWidth: .infinity)
+            .foregroundStyle(.white)
 
         Group {
             if #available(iOS 26.0, *) {
                 field
-                    .glassEffect(.regular.tint(capsuleColor).interactive(), in: Capsule())
-                    .foregroundStyle(textColor)
+                    .glassEffect(.regular.interactive(), in: Capsule())
             } else {
                 field
-                    .background(capsuleColor, in: Capsule())
-                    .foregroundStyle(textColor)
+                    .background(.ultraThinMaterial, in: Capsule())
             }
         }
-        .tint(cursorColor)
-        .shadow(color: (isDarkMode || !showShadow) ? .clear : Color.black.opacity(0.20), radius: 16, x: 0, y: 6)
+        .overlay(Capsule().strokeBorder(NodeDesignStyle.glassStrokePrimary, lineWidth: 0.8))
+        .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
         .overlay(alignment: .leading) {
             ZStack {
-                Circle().fill(circleFill)
+                Circle().fill(accent)
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(iconColor)
+                    .foregroundStyle(.white)
             }
             .frame(width: 32, height: 32)
             .padding(.leading, 6)
@@ -338,7 +325,7 @@ struct HomeStickySearchCapsuleField: View {
             if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(placeholder)
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(textColor)
+                    .foregroundStyle(Color.white.opacity(0.45))
                     .padding(.leading, 52)
                     .padding(.trailing, 20)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -438,7 +425,7 @@ struct HomeTabGeometryReaderPreiOS26Layout: ViewModifier {
     }
 }
 
-/// Заглушка-модификатор: в Sphere контент без доп. safe padding сверху (панель в оверлее).
+/// Заглушка-модификатор: в Node контент без доп. safe padding сверху (панель в оверлее).
 struct HomeTabScrollStackTopSafePaddingPreiOS26: ViewModifier {
     func body(content: Content) -> some View {
         content

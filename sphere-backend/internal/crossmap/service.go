@@ -54,7 +54,7 @@ func (s *Service) FindAlternatives(ctx context.Context, provider, trackID string
 
 	// Search other providers in parallel.
 	query := source.Artist + " " + source.Title
-	providers := []string{"spotify", "youtube", "deezer", "soundcloud"}
+	providers := []string{"spotify", "youtube", "deezer", "soundcloud", "yandex", "vk"}
 
 	var mu sync.Mutex
 	var mappings []TrackMapping

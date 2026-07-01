@@ -1,0 +1,26 @@
+"settings.language.title" = "Langue";
+"settings.language.english" = "Anglais";
+"settings.language.russian" = "Russe";
+"settings.language.french" = "Français";
+"settings.language.german" = "Allemand";
+
+"nodeplus.badge" = "✦ NODE+";
+"nodeplus.title" = "Super-pouvoirs pour votre musique";
+"nodeplus.subtitle" = "Débloquez toutes les fonctions Plus";
+"nodeplus.features.title" = "Tout dans Node+";
+"nodeplus.buy" = "Acheter";
+
+"nodeplus.plan.monthly" = "Mensuel";
+"nodeplus.plan.yearly" = "Annuel";
+"nodeplus.plan.lifetime" = "À vie";
+
+"nodeplus.caption.monthly" = "Facturé chaque mois";
+"nodeplus.caption.yearly" = "Facturé chaque année";
+"nodeplus.caption.lifetime" = "Paiement unique";
+
+"nodeplus.feature.offline" = "Téléchargements hors ligne";
+"nodeplus.feature.priority" = "Support prioritaire";
+"nodeplus.feature.noads" = "Sans publicité";
+"nodeplus.feature.eq" = "Égaliseur";
+"nodeplus.feature.karaoke" = "Mode karaoké";
+"nodeplus.feature.lossless" = "Audio sans perte";

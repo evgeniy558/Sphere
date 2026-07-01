@@ -19,6 +19,8 @@ type Upload struct {
 	UserID     string    `json:"user_id"`
 	Title      string    `json:"title"`
 	ArtistName string    `json:"artist_name"`
+	Album      string    `json:"album"`
+	Lyrics     string    `json:"lyrics"`
 	Duration   int       `json:"duration"`
 	FileURL    string    `json:"file_url"`
 	CoverURL   string    `json:"cover_url"`
@@ -75,7 +77,7 @@ func (s *Service) s3Required() error {
 	return nil
 }
 
-func (s *Service) Upload(ctx context.Context, userID, title, artistName, filename string, fileSize int64, reader io.Reader) (*Upload, error) {
+func (s *Service) Upload(ctx context.Context, userID, title, artistName, album, lyrics, filename string, fileSize int64, reader io.Reader) (*Upload, error) {
 	if err := s.s3Required(); err != nil {
 		return nil, err
 	}
@@ -90,11 +92,11 @@ func (s *Service) Upload(ctx context.Context, userID, title, artistName, filenam
 
 	u := &Upload{}
 	err = s.db.QueryRow(ctx,
-		`INSERT INTO uploads (user_id, title, artist_name, file_url, file_size)
-		 VALUES ($1, $2, $3, $4, $5)
-		 RETURNING id, user_id, title, artist_name, duration, file_url, cover_url, file_size, created_at`,
-		userID, title, artistName, objectKey, fileSize,
-	).Scan(&u.ID, &u.UserID, &u.Title, &u.ArtistName, &u.Duration, &u.FileURL, &u.CoverURL, &u.FileSize, &u.CreatedAt)
+		`INSERT INTO uploads (user_id, title, artist_name, album, lyrics, file_url, file_size)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 RETURNING id, user_id, title, artist_name, album, lyrics, duration, file_url, cover_url, file_size, created_at`,
+		userID, title, artistName, album, lyrics, objectKey, fileSize,
+	).Scan(&u.ID, &u.UserID, &u.Title, &u.ArtistName, &u.Album, &u.Lyrics, &u.Duration, &u.FileURL, &u.CoverURL, &u.FileSize, &u.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("save upload: %w", err)
 	}
@@ -140,7 +142,7 @@ func (s *Service) GetObjectReader(ctx context.Context, objectKey string) (io.Rea
 
 func (s *Service) List(ctx context.Context, userID string) ([]Upload, error) {
 	rows, err := s.db.Query(ctx,
-		`SELECT id, user_id, title, artist_name, duration, file_url, cover_url, file_size, created_at
+		`SELECT id, user_id, title, artist_name, album, lyrics, duration, file_url, cover_url, file_size, created_at
 		 FROM uploads WHERE user_id = $1 ORDER BY created_at DESC`, userID)
 	if err != nil {
 		return nil, err
@@ -150,7 +152,7 @@ func (s *Service) List(ctx context.Context, userID string) ([]Upload, error) {
 	var uploads []Upload
 	for rows.Next() {
 		var u Upload
-		if err := rows.Scan(&u.ID, &u.UserID, &u.Title, &u.ArtistName, &u.Duration, &u.FileURL, &u.CoverURL, &u.FileSize, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.UserID, &u.Title, &u.ArtistName, &u.Album, &u.Lyrics, &u.Duration, &u.FileURL, &u.CoverURL, &u.FileSize, &u.CreatedAt); err != nil {
 			return nil, err
 		}
 		uploads = append(uploads, u)
